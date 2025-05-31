@@ -3,11 +3,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import re
 import numpy as np
+import os
 from PIL import Image
 
-# --- Show your logo at the top ---
-logo = Image.open("/mnt/data/TradeIQ.png")
-st.image(logo, width=150)
+# --- LOGO: Safe loading (only if file exists) ---
+logo_path = "/mnt/data/TradeIQ.png"
+if os.path.exists(logo_path):
+    logo = Image.open(logo_path)
+    st.image(logo, width=150)
+else:
+    st.info("Upload your logo as TradeIQ.png to show it here.")
 
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
 
