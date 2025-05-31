@@ -196,7 +196,6 @@ def parse_mt5_report(file):
     df = pd.read_csv(io.StringIO("\n".join(table_lines)))
     return df
 
-# -- UPDATED parse_set_file --
 def parse_set_file(file):
     file.seek(0)
     raw = file.read()
@@ -270,7 +269,6 @@ if uploaded_set is not None:
                 if '=' in line and not line.strip().startswith(";"):
                     key, val = line.split('=', 1)
                     editable_params[key.strip()] = val.split('||')[0].strip()
-        # Debug display of parameters (optional)
         st.sidebar.write("Loaded parameters preview:")
         preview = list(editable_params.items())[:10]
         for k, v in preview:
@@ -292,6 +290,13 @@ if uploaded_csv is not None:
         except Exception as e:
             st.error(f"Error parsing CSV/report: {e}")
             df = None
+
+# New info messages for single file upload states
+if uploaded_set is not None and uploaded_csv is None:
+    st.info("EA settings file loaded. Please upload a backtest CSV/report to analyze performance.")
+
+if uploaded_csv is not None and uploaded_set is None:
+    st.info("Backtest CSV/report loaded. Please upload your EA .set/.ini file to analyze and optimize.")
 
 if not st.session_state.get("optimize_clicked", False):
     if df is not None:
