@@ -10,10 +10,18 @@ import matplotlib as mpl
 import time
 import streamlit.components.v1 as components
 
-# --- 1. SET PAGE CONFIG FIRST (No Streamlit commands before this!) ---
+# --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. CSS Styling for smaller button and dark theme ---
+# --- 2. Display logo at top (adjust path if needed) ---
+logo_path = "TradeIQ.png"  # Make sure this file is in the same folder as the script
+if os.path.exists(logo_path):
+    logo_img = Image.open(logo_path)
+    st.image(logo_img, width=180)
+else:
+    st.warning("Logo file 'TradeIQ.png' not found in the app folder.")
+
+# --- 3. CSS Styling for smaller button and dark theme ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
@@ -81,31 +89,8 @@ footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. Remove big animated button from HTML/JS injection ---
-# We skip injecting any big button now (no <button id="optimizeBtn">)
-# We only keep small helper scripts if needed or just skip
+# (Helper functions go here - same as before)
 
-# If you want, you can still keep the JS listener if you plan to trigger via JS event:
-components.html("""
-<script>
-window.addEventListener('message', (event) => {
-  if(event.data.streamlitEvent === 'optimize_clicked'){
-    window.parent.postMessage({type: "streamlit:setComponentValue", value: true}, "*");
-  }
-});
-</script>
-""")
-
-# --- 4. Session state for optimize clicked ---
-if "optimize_clicked" not in st.session_state:
-    st.session_state.optimize_clicked = False
-
-# --- 5. Sidebar uploaders ---
-uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
-uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
-st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
-
-# --- 6. Helper functions ---
 def clamp(value, min_val, max_val):
     return max(min_val, min(max_val, value))
 
@@ -218,7 +203,7 @@ def parse_set_file(file):
 
 def generate_equity_curve_plot(profits_series):
     mpl.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(6, 3))  # smaller size
+    fig, ax = plt.subplots(figsize=(3, 1.5))  # Reduced size: half width and height
     equity = profits_series.cumsum()
     ax.plot(equity, color='#00f0ff', linewidth=2, label='Equity Curve')
     ax.fill_between(equity.index, equity, equity.cummax(), color='#004466', alpha=0.5, label='Drawdown')
@@ -231,7 +216,12 @@ def generate_equity_curve_plot(profits_series):
     plt.tight_layout()
     return fig
 
-# --- 7. Main logic ---
+# -- Main UI and logic (uploaders, parse, analyze, optimize) --
+
+uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
+uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
+st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
+
 editable_params = {}
 full_output_lines = []
 optimized_params = {}
@@ -285,13 +275,11 @@ if uploaded_csv:
         fig = generate_equity_curve_plot(profits)
         st.pyplot(fig)
 
-# --- 8. Show smaller button ONLY in sidebar and only after BOTH files uploaded ---
 if uploaded_csv is not None and uploaded_set is not None:
     if st.sidebar.button("🔍 Analyze & Optimize Settings Automatically"):
         st.session_state.optimize_clicked = True
 
-# --- 9. Run optimization if button clicked ---
-if st.session_state.optimize_clicked and editable_params and metrics:
+if st.session_state.get("optimize_clicked", False) and editable_params and metrics:
     with st.spinner("Optimizing your settings..."):
         time.sleep(1)
 
@@ -300,7 +288,6 @@ if st.session_state.optimize_clicked and editable_params and metrics:
 
         avg_win = metrics['avg_win']
         avg_loss = abs(metrics['avg_loss'])
-        rr = avg_win / avg_loss if avg_loss > 0 else 2.0
         profit_factor = metrics['profit_factor']
         max_dd = metrics['max_drawdown']
 
