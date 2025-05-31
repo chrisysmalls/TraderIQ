@@ -6,6 +6,101 @@ import os
 from PIL import Image
 import io
 import base64
+import matplotlib as mpl
+import time
+
+# --- DARK FUTURISTIC THEME CSS ---
+st.markdown(
+    """
+    <style>
+    /* Background and text */
+    body, .main, .block-container {
+        background-color: #0f111a;
+        color: #e0e6f8;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    /* Sidebar translucent */
+    .css-1d391kg, .css-1v3fvcr {
+        background: rgba(20, 25, 50, 0.8);
+        backdrop-filter: blur(15px);
+        border-radius: 12px;
+        padding: 20px;
+    }
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {
+        color: #68c0ff !important;
+        text-shadow: 0 0 8px #68c0ff;
+    }
+    /* Buttons */
+    div.stButton > button:first-child {
+        background: linear-gradient(90deg, #00f0ff, #0078ff);
+        color: white;
+        font-size: 20px;
+        font-weight: 700;
+        padding: 16px 0;
+        border-radius: 12px;
+        width: 100%;
+        border: none;
+        box-shadow: 0 0 15px #00f0ff;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:first-child:hover {
+        background: linear-gradient(90deg, #0078ff, #00f0ff);
+        box-shadow: 0 0 25px #00f0ff;
+        cursor: pointer;
+        transform: scale(1.05);
+    }
+    /* Inputs */
+    input, textarea {
+        background-color: #1b2038 !important;
+        color: #e0e6f8 !important;
+        border-radius: 10px !important;
+        border: 1px solid #3a4a75 !important;
+        padding: 10px !important;
+    }
+    /* Table headers */
+    thead tr th {
+        background: #1c2a53 !important;
+        color: #68c0ff !important;
+        font-weight: 700 !important;
+        text-align: center !important;
+        text-shadow: 0 0 4px #68c0ff;
+    }
+    /* Table rows */
+    tbody tr {
+        background: #0f111a !important;
+        border-bottom: 1px solid #2c3e75 !important;
+    }
+    tbody tr:hover {
+        background: #1a2a59 !important;
+    }
+    /* Chart */
+    .stPlotlyChart > div > div > div {
+        background-color: #0f111a !important;
+    }
+    /* Hide footer */
+    footer {visibility: hidden;}
+    /* Scrollbar for sidebar */
+    .css-1d391kg {
+        scrollbar-width: thin;
+        scrollbar-color: #68c0ff #0f111a;
+    }
+    .css-1d391kg::-webkit-scrollbar {
+        width: 8px;
+    }
+    .css-1d391kg::-webkit-scrollbar-thumb {
+        background-color: #68c0ff;
+        border-radius: 10px;
+    }
+    /* Caption style */
+    .css-1avcm0n {
+        color: #6e7caa !important;
+        font-style: italic;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
@@ -22,12 +117,13 @@ if os.path.exists(logo_path):
 else:
     st.sidebar.info(f"Logo missing: Place your logo as {logo_path}")
 
-st.title("🧠 TraderIQ: Advanced MT5 Backtest Analyzer & Optimizer")
-st.sidebar.markdown("## Upload your MT5 Backtest Data and EA Set File")
+st.title("🧠 TraderIQ: MT5 Backtest Analyzer & Optimizer")
+st.sidebar.markdown("<h2 style='color:#68c0ff; font-weight:700;'>Upload your MT5 Backtest Data and EA Set File</h2>", unsafe_allow_html=True)
 
 # --- FILE UPLOAD ---
 uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
 uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
+st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
 
 # --- HELPER FUNCTIONS ---
 
@@ -139,15 +235,17 @@ def calculate_max_drawdown(profits_series):
     return abs(max_dd)
 
 def generate_equity_curve_plot(profits_series):
+    mpl.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(6, 2.5))
     equity = profits_series.cumsum()
-    fig, ax = plt.subplots(figsize=(8, 3))
-    ax.plot(equity, label='Equity Curve')
-    ax.fill_between(equity.index, equity, equity.cummax(), color='red', alpha=0.3, label='Drawdown')
-    ax.set_title("Equity Curve with Drawdown")
-    ax.set_xlabel("Trade Number")
-    ax.set_ylabel("Cumulative Profit")
-    ax.legend()
-    ax.grid(True)
+    ax.plot(equity, color='#00f0ff', linewidth=2, label='Equity Curve')
+    ax.fill_between(equity.index, equity, equity.cummax(), color='#004466', alpha=0.5, label='Drawdown')
+    ax.set_title("Equity Curve with Drawdown", color='#68c0ff')
+    ax.set_xlabel("Trade Number", color='#68c0ff')
+    ax.set_ylabel("Cumulative Profit", color='#68c0ff')
+    ax.tick_params(colors='#68c0ff')
+    ax.legend(facecolor='#0f111a', edgecolor='#68c0ff', labelcolor='#68c0ff')
+    ax.grid(True, color='#1a2a59')
     plt.tight_layout()
     return fig
 
@@ -219,121 +317,124 @@ if uploaded_csv:
 
 # --- Optimization UI ---
 if editable_params and metrics:
-    if st.button("Run Advanced Optimization"):
-        optimized_params = editable_params.copy()
-        messages = []
+    if st.button("🔍 Analyze & Optimize Settings Automatically", key="optimize_btn"):
+        with st.spinner("Optimizing your settings..."):
+            time.sleep(1)  # simulate processing delay
 
-        avg_win = metrics['avg_win']
-        avg_loss = abs(metrics['avg_loss'])
-        rr = avg_win / avg_loss if avg_loss > 0 else 2.0
-        profit_factor = metrics['profit_factor']
-        max_dd = metrics['max_drawdown']
+            optimized_params = editable_params.copy()
+            messages = []
 
-        # Adjust TakeProfit and StopLoss
-        if "TakeProfit" in optimized_params and "StopLoss" in optimized_params:
+            avg_win = metrics['avg_win']
+            avg_loss = abs(metrics['avg_loss'])
+            rr = avg_win / avg_loss if avg_loss > 0 else 2.0
+            profit_factor = metrics['profit_factor']
+            max_dd = metrics['max_drawdown']
+
+            # Adjust TakeProfit and StopLoss
+            if "TakeProfit" in optimized_params and "StopLoss" in optimized_params:
+                try:
+                    old_tp = float(optimized_params["TakeProfit"])
+                    old_sl = float(optimized_params["StopLoss"])
+
+                    vol_factor = 1.0 if max_dd < 10 else 0.7
+                    new_sl = clamp(min(old_sl, avg_loss * 1.1) * vol_factor, 2, 500)
+                    new_tp = clamp(new_sl * 2.0, 5, 1000)
+
+                    optimized_params["TakeProfit"] = str(round(new_tp, 2))
+                    optimized_params["StopLoss"] = str(round(new_sl, 2))
+                    messages.append(f"Set TakeProfit to {new_tp} and StopLoss to {new_sl} maintaining risk-reward.")
+                except:
+                    pass
+
+            # Adjust RiskPercent
+            if "RiskPercent" in optimized_params:
+                try:
+                    old_risk = float(optimized_params["RiskPercent"])
+                    risk_factor = 1.0
+                    if max_dd > 15:
+                        risk_factor *= 0.5
+                    elif max_dd > 10:
+                        risk_factor *= 0.7
+                    if profit_factor < 1.5:
+                        risk_factor *= 0.7
+                    new_risk = clamp(old_risk * risk_factor, 0.1, old_risk)
+                    optimized_params["RiskPercent"] = str(round(new_risk, 3))
+                    messages.append(f"Adjusted RiskPercent from {old_risk} to {new_risk} due to drawdown/profit factor.")
+                except:
+                    pass
+
+            # Moving averages smoothing adjustments
+            if "MovingAveragePeriodShort" in optimized_params and "MovingAveragePeriodLong" in optimized_params:
+                try:
+                    short_ma = int(optimized_params["MovingAveragePeriodShort"])
+                    long_ma = int(optimized_params["MovingAveragePeriodLong"])
+                    short_ma = clamp(short_ma, 5, 50)
+                    long_ma = clamp(long_ma, short_ma + 5, 200)
+                    optimized_params["MovingAveragePeriodShort"] = str(short_ma)
+                    optimized_params["MovingAveragePeriodLong"] = str(long_ma)
+                    messages.append(f"Set MA periods Short={short_ma}, Long={long_ma} for noise reduction.")
+                except:
+                    pass
+
+            # RSI tuning
+            if "RSIPeriod" in optimized_params and "RSIOverbought" in optimized_params and "RSIOversold" in optimized_params:
+                try:
+                    rsi_period = int(optimized_params["RSIPeriod"])
+                    overbought = int(optimized_params["RSIOverbought"])
+                    oversold = int(optimized_params["RSIOversold"])
+                    rsi_period = clamp(rsi_period, 7, 21)
+                    overbought = clamp(overbought, 70, 90)
+                    oversold = clamp(oversold, 10, 30)
+                    optimized_params["RSIPeriod"] = str(rsi_period)
+                    optimized_params["RSIOverbought"] = str(overbought)
+                    optimized_params["RSIOversold"] = str(oversold)
+                    messages.append(f"Tuned RSI: Period={rsi_period}, Overbought={overbought}, Oversold={oversold}.")
+                except:
+                    pass
+
+            # Overfitting warning
             try:
-                old_tp = float(optimized_params["TakeProfit"])
-                old_sl = float(optimized_params["StopLoss"])
-
-                vol_factor = 1.0 if max_dd < 10 else 0.7
-                new_sl = clamp(min(old_sl, avg_loss * 1.1) * vol_factor, 2, 500)
-                new_tp = clamp(new_sl * 2.0, 5, 1000)
-
-                optimized_params["TakeProfit"] = str(round(new_tp, 2))
-                optimized_params["StopLoss"] = str(round(new_sl, 2))
-                messages.append(f"Set TakeProfit to {new_tp} and StopLoss to {new_sl} maintaining risk-reward.")
+                if "TakeProfit" in optimized_params:
+                    tp_val = float(optimized_params["TakeProfit"])
+                    if tp_val > 5 * avg_win and avg_win > 0:
+                        messages.append("Warning: TakeProfit unusually high vs average wins — possible overfitting.")
             except:
                 pass
 
-        # Adjust RiskPercent
-        if "RiskPercent" in optimized_params:
-            try:
-                old_risk = float(optimized_params["RiskPercent"])
-                risk_factor = 1.0
-                if max_dd > 15:
-                    risk_factor *= 0.5
-                elif max_dd > 10:
-                    risk_factor *= 0.7
-                if profit_factor < 1.5:
-                    risk_factor *= 0.7
-                new_risk = clamp(old_risk * risk_factor, 0.1, old_risk)
-                optimized_params["RiskPercent"] = str(round(new_risk, 3))
-                messages.append(f"Adjusted RiskPercent from {old_risk} to {new_risk} due to drawdown/profit factor.")
-            except:
-                pass
+            st.subheader("Optimization Suggestions & Changes")
+            for msg in messages:
+                st.write("- " + msg)
 
-        # Moving averages smoothing adjustments
-        if "MovingAveragePeriodShort" in optimized_params and "MovingAveragePeriodLong" in optimized_params:
-            try:
-                short_ma = int(optimized_params["MovingAveragePeriodShort"])
-                long_ma = int(optimized_params["MovingAveragePeriodLong"])
-                short_ma = clamp(short_ma, 5, 50)
-                long_ma = clamp(long_ma, short_ma + 5, 200)
-                optimized_params["MovingAveragePeriodShort"] = str(short_ma)
-                optimized_params["MovingAveragePeriodLong"] = str(long_ma)
-                messages.append(f"Set MA periods Short={short_ma}, Long={long_ma} for noise reduction.")
-            except:
-                pass
+            # Show param comparison
+            st.subheader("Parameter Comparison")
+            keys = sorted(set(editable_params.keys()) | set(optimized_params.keys()))
+            comp_data = []
+            for k in keys:
+                comp_data.append({
+                    "Parameter": k,
+                    "Original": editable_params.get(k, ""),
+                    "Optimized": optimized_params.get(k, editable_params.get(k, ""))
+                })
+            st.table(comp_data)
 
-        # RSI tuning
-        if "RSIPeriod" in optimized_params and "RSIOverbought" in optimized_params and "RSIOversold" in optimized_params:
-            try:
-                rsi_period = int(optimized_params["RSIPeriod"])
-                overbought = int(optimized_params["RSIOverbought"])
-                oversold = int(optimized_params["RSIOversold"])
-                rsi_period = clamp(rsi_period, 7, 21)
-                overbought = clamp(overbought, 70, 90)
-                oversold = clamp(oversold, 10, 30)
-                optimized_params["RSIPeriod"] = str(rsi_period)
-                optimized_params["RSIOverbought"] = str(overbought)
-                optimized_params["RSIOversold"] = str(oversold)
-                messages.append(f"Tuned RSI: Period={rsi_period}, Overbought={overbought}, Oversold={oversold}.")
-            except:
-                pass
-
-        # Overfitting warning
-        try:
-            if "TakeProfit" in optimized_params:
-                tp_val = float(optimized_params["TakeProfit"])
-                if tp_val > 5 * avg_win and avg_win > 0:
-                    messages.append("Warning: TakeProfit unusually high vs average wins — possible overfitting.")
-        except:
-            pass
-
-        st.subheader("Optimization Suggestions & Changes")
-        for msg in messages:
-            st.write("- " + msg)
-
-        # Show param comparison
-        st.subheader("Parameter Comparison")
-        keys = sorted(set(editable_params.keys()) | set(optimized_params.keys()))
-        comp_data = []
-        for k in keys:
-            comp_data.append({
-                "Parameter": k,
-                "Original": editable_params.get(k, ""),
-                "Optimized": optimized_params.get(k, editable_params.get(k, ""))
-            })
-        st.table(comp_data)
-
-        # Compose new set file content
-        output_lines = []
-        for line in full_output_lines:
-            if '=' in line and not line.strip().startswith(";"):
-                key = line.split('=', 1)[0].strip()
-                val = optimized_params.get(key, None)
-                if val is not None:
-                    output_lines.append(f"{key}={val}")
+            # Compose new set file content
+            output_lines = []
+            for line in full_output_lines:
+                if '=' in line and not line.strip().startswith(";"):
+                    key = line.split('=', 1)[0].strip()
+                    val = optimized_params.get(key, None)
+                    if val is not None:
+                        output_lines.append(f"{key}={val}")
+                    else:
+                        output_lines.append(line)
                 else:
                     output_lines.append(line)
-            else:
-                output_lines.append(line)
-        new_setfile_text = "\n".join(output_lines)
+            new_setfile_text = "\n".join(output_lines)
 
-        st.markdown("### Download Optimized Set File")
-        b64 = base64.b64encode(new_setfile_text.encode()).decode()
-        href = f'<a href="data:file/txt;base64,{b64}" download="TraderIQ_Optimized.set">📥 Click here to download</a>'
-        st.markdown(href, unsafe_allow_html=True)
+            st.markdown("### Download Optimized Set File")
+            b64 = base64.b64encode(new_setfile_text.encode()).decode()
+            href = f'<a href="data:file/txt;base64,{b64}" download="TraderIQ_Optimized.set">📥 Click here to download</a>'
+            st.markdown(href, unsafe_allow_html=True)
 
 # Manual editing fallback
 if editable_params and not optimized_params:
