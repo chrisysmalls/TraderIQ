@@ -12,7 +12,7 @@ import time
 # --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. CSS Styling for dark theme and button (NO watermark) ---
+# --- 2. CSS Styling for dark theme and button (no watermark) ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
@@ -120,7 +120,7 @@ if uploaded_csv is None and uploaded_set is None:
             Start by uploading files in the sidebar to the left!
         """)
 
-# --- 5. Helper functions (same as before) ---
+# --- 5. Helper functions ---
 def clamp(value, min_val, max_val):
     return max(min_val, min(max_val, value))
 
@@ -421,9 +421,12 @@ if st.session_state.get("optimize_clicked", False) and editable_params and metri
         new_setfile_text = "\n".join(output_lines)
 
         st.markdown("### Download Optimized Set File")
-        b64 = base64.b64encode(new_setfile_text.encode()).decode()
-        href = f'<a href="data:file/txt;base64,{b64}" download="TraderIQ_Optimized.set">📥 Click here to download</a>'
-        st.markdown(href, unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Download Updated .set File",
+            data=new_setfile_text,
+            file_name="TraderIQ_Optimized.set",
+            mime="text/plain"
+        )
 
 # Manual editing fallback
 if editable_params and not optimized_params:
@@ -445,9 +448,12 @@ if editable_params and not optimized_params:
             output_lines.append(line)
     new_setfile_text = "\n".join(output_lines)
     st.markdown("### Download Edited Set File")
-    b64 = base64.b64encode(new_setfile_text.encode()).decode()
-    href = f'<a href="data:file/txt;base64,{b64}" download="TraderIQ_ManualEdit.set">📥 Click here to download</a>'
-    st.markdown(href, unsafe_allow_html=True)
+    st.download_button(
+        label="📥 Download Edited .set File",
+        data=new_setfile_text,
+        file_name="TraderIQ_ManualEdit.set",
+        mime="text/plain"
+    )
 
 st.markdown("---")
 st.caption("TraderIQ: Upload backtest CSV/report and EA set files to analyze, optimize, and export improved MT5 settings.")
