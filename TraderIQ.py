@@ -6,19 +6,29 @@ import numpy as np
 import os
 from PIL import Image
 
-# --- PAGE CONFIG (must be first Streamlit command) ---
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
 
-# --- LOGO: Safe loading (only if file exists) ---
-logo_path = "/mnt/data/TradeIQ.png"
-if os.path.exists(logo_path):
+# --- LOGO: Let user upload logo or fallback to file ---
+uploaded_logo = st.file_uploader("Optional: Upload your TraderIQ logo (PNG)", type=["png"], key="logo")
+logo = None
+
+if uploaded_logo is not None:
     try:
-        logo = Image.open(logo_path)
+        logo = Image.open(uploaded_logo)
         st.image(logo, width=150)
     except Exception as e:
-        st.warning("Logo found but could not be opened.")
+        st.warning("Uploaded logo could not be opened.")
 else:
-    st.info("Upload your logo as TradeIQ.png to show it here.")
+    logo_path = "/mnt/data/TradeIQ.png"
+    if os.path.exists(logo_path):
+        try:
+            logo = Image.open(logo_path)
+            st.image(logo, width=150)
+        except Exception as e:
+            st.warning("Logo found on disk but could not be opened.")
+    else:
+        st.info("Upload your logo at the top to show it here.")
 
 st.title("🧠 TraderIQ: MT5 Backtest Analyzer & Optimizer")
 st.subheader("Analyze, Optimize, and Export Smarter Bot Settings Automatically.")
