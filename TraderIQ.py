@@ -8,7 +8,6 @@ import io
 import base64
 import matplotlib as mpl
 import time
-import streamlit.components.v1 as components
 
 # --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
@@ -115,11 +114,17 @@ with col1:
         st.warning("Logo file 'TradeIQ.png' not found in the app folder.")
 
 with col2:
-    uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
-    uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
-    st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
+    st.markdown("")  # Placeholder for spacing or future content
 
-    if uploaded_csv is None and uploaded_set is None:
+# --- 4. SINGLE file uploader calls with unique keys ---
+uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"], key="csv_uploader")
+uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"], key="set_uploader")
+
+st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
+
+# Show welcome text only if no files uploaded
+if uploaded_csv is None and uploaded_set is None:
+    with col2:
         st.markdown("""
             # Welcome to TraderIQ 🧠
             ### Your MT5 Strategy Optimizer & Analyzer
@@ -137,7 +142,7 @@ with col2:
             Start by uploading files in the sidebar to the left!
         """)
 
-# --- 4. Helper functions ---
+# --- 5. Helper functions (same as before) ---
 def clamp(value, min_val, max_val):
     return max(min_val, min(max_val, value))
 
@@ -272,7 +277,8 @@ def generate_equity_curve_plot(profits_series):
     plt.tight_layout()
     return fig
 
-# --- Main app logic variables and parsing ---
+# --- 6. Main logic ---
+
 editable_params = {}
 full_output_lines = []
 optimized_params = {}
@@ -280,7 +286,7 @@ metrics = {}
 set_file_loaded = False
 df = None
 
-if uploaded_set := st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"]):
+if uploaded_set is not None:
     try:
         sections, full_output_lines = parse_set_file(uploaded_set)
         set_file_loaded = True
@@ -297,7 +303,7 @@ if set_file_loaded:
                 key, val = line.split('=', 1)
                 editable_params[key.strip()] = val.split('||')[0].strip()
 
-if uploaded_csv := st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"]):
+if uploaded_csv is not None:
     try:
         uploaded_csv.seek(0)
         df = pd.read_csv(uploaded_csv)
