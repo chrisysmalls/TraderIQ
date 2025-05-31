@@ -6,6 +6,9 @@ import numpy as np
 import os
 from PIL import Image
 
+# --- PAGE CONFIG (must be the very first Streamlit command) ---
+st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
+
 # --- LOGO: Safe loading (only if file exists) ---
 logo_path = "/mnt/data/TradeIQ.png"
 if os.path.exists(logo_path):
@@ -13,8 +16,6 @@ if os.path.exists(logo_path):
     st.image(logo, width=150)
 else:
     st.info("Upload your logo as TradeIQ.png to show it here.")
-
-st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
 
 st.title("🧠 TraderIQ: MT5 Backtest Analyzer & Optimizer")
 st.subheader("Analyze, Optimize, and Export Smarter Bot Settings Automatically.")
