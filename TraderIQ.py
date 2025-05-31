@@ -9,8 +9,8 @@ from PIL import Image
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
 
-# --- LOGO: Always load from file if present (NO UPLOAD WIDGET) ---
-logo_path = "/mnt/data/TradeIQ.png"
+# --- LOGO: Load from same folder as script ---
+logo_path = "TradeIQ.png"  # <-- expects TradeIQ.png in same folder as this script
 if os.path.exists(logo_path):
     try:
         logo = Image.open(logo_path)
@@ -18,7 +18,7 @@ if os.path.exists(logo_path):
     except Exception:
         st.warning("Logo found on disk but could not be opened.")
 else:
-    st.info("Logo missing: Place your logo file as /mnt/data/TradeIQ.png")
+    st.info("Logo missing: Place your logo file as TradeIQ.png in the same folder as this script.")
 
 st.title("🧠 TraderIQ: MT5 Backtest Analyzer & Optimizer")
 st.subheader("Analyze, Optimize, and Export Smarter Bot Settings Automatically.")
