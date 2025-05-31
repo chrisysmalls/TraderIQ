@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import io
 import re
 
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
@@ -9,28 +8,30 @@ st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="center
 st.title("🧠 TraderIQ: MT5 Backtest Analyzer & Optimizer")
 st.subheader("Analyze, Optimize, and Export Smarter Bot Settings Automatically.")
 
-# --- Helper to extract trades table from full MT5 report ---
+# --- Helper to robustly extract trades table from any MT5 report ---
 def extract_trades_from_mt5_report(file):
-    # Read all lines (from uploaded file-like object)
     content = file.read()
     if isinstance(content, bytes):
         content = content.decode("utf-8")
     lines = content.splitlines()
-
-    # Find the table header (starts with "Ticket,")
+    # Flexible: look for header row that has Profit and (Ticket or Order)
     trade_table_start = None
     for idx, line in enumerate(lines):
-        if line.strip().startswith("Ticket,"):
+        if "Profit" in line and ("Ticket" in line or "Order" in line):
             trade_table_start = idx
             break
-
     if trade_table_start is None:
-        raise ValueError("Could not find trades table header in uploaded file.")
+        for idx, line in enumerate(lines):
+            if "Profit" in line:
+                trade_table_start = idx
+                break
+    if trade_table_start is None:
+        raise ValueError("Could not find trades table header (with 'Profit') in uploaded file.")
 
-    # Find where the table ends (blank line or new section)
+    # Find table end (blank line or next section/summary)
     trade_table_end = None
     for idx in range(trade_table_start + 1, len(lines)):
-        if lines[idx].strip() == "" or lines[idx].startswith("Summary"):
+        if lines[idx].strip() == "" or any(x in lines[idx] for x in ["Summary", "Report", "[", "input"]):
             trade_table_end = idx
             break
     if trade_table_end is None:
@@ -58,8 +59,7 @@ if uploaded_csv:
         if "Profit" not in df.columns:
             raise Exception("No 'Profit' column found; attempting report extract...")
     except Exception:
-        # If not a normal table, extract from report
-        uploaded_csv.seek(0)  # Reset pointer after failed read
+        uploaded_csv.seek(0)
         try:
             df = extract_trades_from_mt5_report(uploaded_csv)
             st.success("Extracted trade table from report!")
@@ -67,7 +67,7 @@ if uploaded_csv:
             st.error(f"Failed to extract trades from uploaded CSV/report: {e}")
             df = None
 
-# --- Rest of your analysis logic (only if df loaded) ---
+# --- CSV Analysis (only if df loaded) ---
 if df is not None:
     profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
     if not profit_col:
@@ -102,7 +102,8 @@ if df is not None:
     ax.grid(True)
     st.pyplot(fig)
 
-# [Your .set/.ini file parsing and download logic goes here, as previously discussed.]
+# --- .set/.ini parameter parsing and download (see earlier for full code) ---
+# Place your existing bot parameter code block here, or request if you need the full integrated version.
 
 st.markdown("---")
 st.caption("TraderIQ: Now supports raw CSVs or full MT5 report files for ultimate flexibility!")
