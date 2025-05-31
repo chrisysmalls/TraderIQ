@@ -11,13 +11,12 @@ import time
 # --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. CSS Styling for dark theme and button (no watermark) ---
+# --- 2. CSS Styling for dark theme and button ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
     font-size: 18px;
     padding: 10px 20px;
-    width: auto;
     min-width: 200px;
     border-radius: 10px;
 }
@@ -93,13 +92,12 @@ with col1:
 with col2:
     st.markdown("")  # Placeholder for spacing or future content
 
-# --- 4. SINGLE file uploader calls with unique keys ---
+# --- 4. File uploaders ---
 uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"], key="csv_uploader")
 uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"], key="set_uploader")
 
 st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
 
-# Show welcome text only if no files uploaded
 if uploaded_csv is None and uploaded_set is None:
     with col2:
         st.markdown("""
@@ -108,18 +106,18 @@ if uploaded_csv is None and uploaded_set is None:
 
             Upload your MT5 backtest CSV/report and EA .set/.ini files using the sidebar.
             
-            Once uploaded, you can analyze your backtest performance, optimize parameters automatically, and download improved .set files to boost profit and reduce risk.
+            Once uploaded, analyze performance, optimize parameters automatically, and download improved .set files.
 
             **Features:**
-            - Intelligent automatic parameter tuning
-            - Comprehensive backtest metrics visualization
-            - Easy manual parameter editing
-            - Clean, futuristic UI with rich insights
+            - Intelligent auto parameter tuning
+            - Backtest metrics visualization
+            - Manual parameter editing
+            - Clean, futuristic UI
 
             Start by uploading files in the sidebar to the left!
         """)
 
-# --- 5. Helper functions ---
+# --- 5. Helpers ---
 def clamp(value, min_val, max_val):
     return max(min_val, min(max_val, value))
 
@@ -198,18 +196,23 @@ def parse_mt5_report(file):
     df = pd.read_csv(io.StringIO("\n".join(table_lines)))
     return df
 
+# -- UPDATED parse_set_file --
 def parse_set_file(file):
     file.seek(0)
     raw = file.read()
-    for encoding in ['utf-16', 'utf-8', 'latin-1']:
+
+    encodings_to_try = ['utf-16', 'utf-16le', 'utf-8', 'latin-1']
+    content = None
+    for enc in encodings_to_try:
         try:
             if isinstance(raw, bytes):
-                content = raw.decode(encoding)
+                content = raw.decode(enc)
             else:
                 content = raw
             if '\x00' in content:
                 content = content.replace('\x00', '')
-            break
+            if '=' in content:
+                break
         except Exception:
             continue
     else:
@@ -217,44 +220,36 @@ def parse_set_file(file):
 
     lines = content.splitlines()
     sections = {}
-    current_section = "Parameters"
-    sections[current_section] = []
+    current_section = None
+
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            current_section = stripped.strip("[]")
+        if stripped.startswith('[') and stripped.endswith(']'):
+            current_section = stripped[1:-1]
             sections[current_section] = []
-        elif '=' in line and not stripped.startswith(";"):
-            sections[current_section].append(line)
-        else:
-            sections.setdefault(current_section, []).append(line)
+        elif current_section is not None:
+            if '=' in line and not stripped.startswith(';'):
+                sections[current_section].append(line)
     return sections, lines
 
 def generate_equity_curve_plot(profits_series):
     mpl.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(6, 3))  # moderate size for clarity
-    
+    fig, ax = plt.subplots(figsize=(6, 3))
     equity = profits_series.cumsum()
     trades_count = len(equity)
-    
     ax.plot(equity.index, equity.values, color='#00f0ff', linewidth=1.5, label='Equity Curve')
     ax.fill_between(equity.index, equity.values, equity.cummax(), color='#004466', alpha=0.3, label='Drawdown')
-    
     ax.set_title("Equity Curve with Drawdown", color='#68c0ff', fontsize=14)
     ax.set_xlabel("Trade Number", color='#68c0ff', fontsize=12)
     ax.set_ylabel("Cumulative Profit", color='#68c0ff', fontsize=12)
-    
     ax.tick_params(colors='#68c0ff', labelsize=10)
     ax.legend(facecolor='#0f111a', edgecolor='#68c0ff', labelcolor='#68c0ff', fontsize=10)
     ax.grid(True, color='#1a2a59')
-    
-    # Set x limits to full range with small margins
     ax.set_xlim(0, trades_count if trades_count > 0 else 1)
-    
     plt.tight_layout()
     return fig
 
-# --- 6. Main logic ---
+# --- Main Logic ---
 
 editable_params = {}
 full_output_lines = []
@@ -267,18 +262,21 @@ if uploaded_set is not None:
     try:
         sections, full_output_lines = parse_set_file(uploaded_set)
         set_file_loaded = True
+        st.sidebar.markdown("### EA Parameters Detected:")
+        editable_params.clear()
+        for sec, lines in sections.items():
+            st.sidebar.markdown(f"**[{sec}]**")
+            for line in lines:
+                if '=' in line and not line.strip().startswith(";"):
+                    key, val = line.split('=', 1)
+                    editable_params[key.strip()] = val.split('||')[0].strip()
+        # Debug display of parameters (optional)
+        st.sidebar.write("Loaded parameters preview:")
+        preview = list(editable_params.items())[:10]
+        for k, v in preview:
+            st.sidebar.text(f"{k} = {v}")
     except Exception as e:
         st.error(f"Failed to parse set file: {e}")
-
-if set_file_loaded:
-    st.sidebar.markdown("### EA Parameters Detected (Edit if needed)")
-    editable_params.clear()
-    for sec, lines in sections.items():
-        st.sidebar.markdown(f"**[{sec}]**")
-        for line in lines:
-            if '=' in line and not line.strip().startswith(";"):
-                key, val = line.split('=', 1)
-                editable_params[key.strip()] = val.split('||')[0].strip()
 
 if uploaded_csv is not None:
     try:
@@ -296,7 +294,6 @@ if uploaded_csv is not None:
             df = None
 
 if not st.session_state.get("optimize_clicked", False):
-    # Show CSV feedback only if optimization NOT triggered
     if df is not None:
         profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
         if profit_col is None:
@@ -304,20 +301,16 @@ if not st.session_state.get("optimize_clicked", False):
             st.stop()
         profits = df[profit_col].apply(clean_profit_value).dropna()
         metrics = calculate_metrics(profits)
-
         st.subheader("Backtest Metrics")
         st.write(metrics)
-
         fig = generate_equity_curve_plot(profits)
         st.pyplot(fig)
 
-# Show the optimization button only if both files uploaded and parsed
 if uploaded_csv is not None and uploaded_set is not None and not st.session_state.get("optimize_clicked", False):
     if st.sidebar.button("🔍 Analyze & Optimize Settings Automatically"):
         st.session_state.optimize_clicked = True
 
 if st.session_state.get("optimize_clicked", False) and editable_params and metrics:
-    # Clear main content and show only optimization info
     st.markdown("---")
     st.header("🚀 Optimization Results")
 
@@ -360,8 +353,6 @@ if st.session_state.get("optimize_clicked", False) and editable_params and metri
         except:
             pass
 
-    # Additional optimizations can go here
-
     st.subheader("Optimization Suggestions & Changes")
     for msg in messages:
         st.write("- " + msg)
@@ -398,7 +389,6 @@ if st.session_state.get("optimize_clicked", False) and editable_params and metri
         mime="text/plain"
     )
 
-# Manual editing fallback (if optimization not done yet)
 if editable_params and not st.session_state.get("optimize_clicked", False):
     st.subheader("Manual Parameter Editor")
     for key, val in editable_params.items():
