@@ -10,9 +10,10 @@ st.subheader("Analyze, Optimize, and Export Smarter Bot Settings Automatically."
 
 # --- Helper to robustly extract trades table from any MT5 report ---
 def extract_trades_from_mt5_report(file):
+    file.seek(0)  # Always start at beginning!
     content = file.read()
     if isinstance(content, bytes):
-        content = content.decode("utf-8")
+        content = content.decode("utf-8", errors="replace")
     lines = content.splitlines()
     # Flexible: look for header row that has Profit and (Ticket or Order)
     trade_table_start = None
@@ -44,13 +45,14 @@ def extract_trades_from_mt5_report(file):
 
 # --- Helper for .set/.ini parsing and UI ---
 def parse_ini_setfile(file):
+    file.seek(0)  # Reset pointer before read
+    content = file.read()
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="replace")
+    lines = content.splitlines()
     sections = {}
     current_section = None
     output_lines = []
-    content = file.read()
-    if isinstance(content, bytes):
-        content = content.decode("utf-8")
-    lines = content.splitlines()
     for line in lines:
         output_lines.append(line)
         stripped = line.strip()
@@ -73,6 +75,7 @@ st.caption("CSV: Either a trade log or a full MT5 report. .set/.ini: Your bot se
 df = None
 if uploaded_csv:
     try:
+        uploaded_csv.seek(0)
         df = pd.read_csv(uploaded_csv)
         if "Profit" not in df.columns:
             raise Exception("No 'Profit' column found; attempting report extract...")
@@ -172,4 +175,4 @@ if editable_params:
     st.download_button("📥 Download Optimized Settings File", "\n".join(output_lines), "TraderIQ_Optimized.set")
 
 st.markdown("---")
-st.caption("TraderIQ: Now supports raw CSVs or full MT5 report files, plus .set/.ini bot settings with full editing and export!")
+st.caption("TraderIQ: Unicode-safe, robust, and fully compatible with all your MT5 CSV and .set/.ini files!")
