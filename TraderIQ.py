@@ -5,20 +5,18 @@ import numpy as np
 import os
 from PIL import Image
 import io
-import base64
 import matplotlib as mpl
 import time
 
 # --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. CSS Styling for dark theme and button (no watermark) ---
+# --- 2. CSS Styling for dark theme and button ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
     font-size: 18px;
     padding: 10px 20px;
-    width: auto;
     min-width: 200px;
     border-radius: 10px;
 }
@@ -94,13 +92,12 @@ with col1:
 with col2:
     st.markdown("")  # Placeholder for spacing or future content
 
-# --- 4. SINGLE file uploader calls with unique keys ---
+# --- 4. File uploaders ---
 uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"], key="csv_uploader")
 uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"], key="set_uploader")
 
 st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
 
-# Show welcome text only if no files uploaded
 if uploaded_csv is None and uploaded_set is None:
     with col2:
         st.markdown("""
@@ -109,13 +106,13 @@ if uploaded_csv is None and uploaded_set is None:
 
             Upload your MT5 backtest CSV/report and EA .set/.ini files using the sidebar.
             
-            Once uploaded, you can analyze your backtest performance, optimize parameters automatically, and download improved .set files to boost profit and reduce risk.
+            Once uploaded, analyze performance, optimize parameters automatically, and download improved .set files.
 
             **Features:**
-            - Intelligent automatic parameter tuning
-            - Comprehensive backtest metrics visualization
-            - Easy manual parameter editing
-            - Clean, futuristic UI with rich insights
+            - Intelligent auto parameter tuning
+            - Backtest metrics visualization
+            - Manual parameter editing
+            - Clean, futuristic UI
 
             Start by uploading files in the sidebar to the left!
         """)
@@ -255,6 +252,24 @@ def generate_equity_curve_plot(profits_series):
     plt.tight_layout()
     return fig
 
+# New function to preserve .set structure but update values
+def generate_optimized_setfile_text(full_output_lines, optimized_params):
+    output_lines = []
+    for line in full_output_lines:
+        stripped = line.strip()
+        if '=' in line and not stripped.startswith(';'):
+            key = line.split('=', 1)[0].strip()
+            if key in optimized_params:
+                parts = line.split('=', 1)[1].split('||', 1)
+                comment = f"||{parts[1]}" if len(parts) > 1 else ""
+                new_line = f"{key}={optimized_params[key]}{comment}"
+                output_lines.append(new_line)
+            else:
+                output_lines.append(line)
+        else:
+            output_lines.append(line)
+    return "\n".join(output_lines)
+
 # --- 6. Main logic ---
 
 editable_params = {}
@@ -357,41 +372,6 @@ if st.session_state.get("optimize_clicked", False) and editable_params and metri
             except:
                 pass
 
-        if "MovingAveragePeriodShort" in optimized_params and "MovingAveragePeriodLong" in optimized_params:
-            try:
-                short_ma = int(optimized_params["MovingAveragePeriodShort"])
-                long_ma = int(optimized_params["MovingAveragePeriodLong"])
-                short_ma = clamp(short_ma, 5, 50)
-                long_ma = clamp(long_ma, short_ma + 5, 200)
-                optimized_params["MovingAveragePeriodShort"] = str(short_ma)
-                optimized_params["MovingAveragePeriodLong"] = str(long_ma)
-                messages.append(f"Set MA periods Short={short_ma}, Long={long_ma} for noise reduction.")
-            except:
-                pass
-
-        if "RSIPeriod" in optimized_params and "RSIOverbought" in optimized_params and "RSIOversold" in optimized_params:
-            try:
-                rsi_period = int(optimized_params["RSIPeriod"])
-                overbought = int(optimized_params["RSIOverbought"])
-                oversold = int(optimized_params["RSIOversold"])
-                rsi_period = clamp(rsi_period, 7, 21)
-                overbought = clamp(overbought, 70, 90)
-                oversold = clamp(oversold, 10, 30)
-                optimized_params["RSIPeriod"] = str(rsi_period)
-                optimized_params["RSIOverbought"] = str(overbought)
-                optimized_params["RSIOversold"] = str(oversold)
-                messages.append(f"Tuned RSI: Period={rsi_period}, Overbought={overbought}, Oversold={oversold}.")
-            except:
-                pass
-
-        try:
-            if "TakeProfit" in optimized_params:
-                tp_val = float(optimized_params["TakeProfit"])
-                if tp_val > 5 * avg_win and avg_win > 0:
-                    messages.append("Warning: TakeProfit unusually high vs average wins — possible overfitting.")
-        except:
-            pass
-
         st.subheader("Optimization Suggestions & Changes")
         for msg in messages:
             st.write("- " + msg)
@@ -407,18 +387,7 @@ if st.session_state.get("optimize_clicked", False) and editable_params and metri
             })
         st.table(comp_data)
 
-        output_lines = []
-        for line in full_output_lines:
-            if '=' in line and not line.strip().startswith(";"):
-                key = line.split('=', 1)[0].strip()
-                val = optimized_params.get(key, None)
-                if val is not None:
-                    output_lines.append(f"{key}={val}")
-                else:
-                    output_lines.append(line)
-            else:
-                output_lines.append(line)
-        new_setfile_text = "\n".join(output_lines)
+        new_setfile_text = generate_optimized_setfile_text(full_output_lines, optimized_params)
 
         st.markdown("### Download Optimized Set File")
         st.download_button(
@@ -429,7 +398,7 @@ if st.session_state.get("optimize_clicked", False) and editable_params and metri
         )
 
 # Manual editing fallback
-if editable_params and not optimized_params:
+if editable_params and not st.session_state.get("optimize_clicked", False):
     st.subheader("Manual Parameter Editor")
     for key, val in editable_params.items():
         new_val = st.text_input(key, val)
