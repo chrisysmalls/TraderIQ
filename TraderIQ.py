@@ -73,7 +73,8 @@ if df is not None:
     if not profit_col:
         st.error("Profit column not found. Please upload a standard MT5 results CSV or report with trade table.")
         st.stop()
-    profits = df[profit_col]
+    # Ensure 'Profit' is numeric!
+    profits = pd.to_numeric(df[profit_col], errors="coerce")
     total_trades = len(profits)
     win_rate = (profits > 0).sum() / total_trades * 100 if total_trades else 0
     total_profit = profits.sum()
@@ -102,8 +103,8 @@ if df is not None:
     ax.grid(True)
     st.pyplot(fig)
 
-# --- .set/.ini parameter parsing and download (see earlier for full code) ---
-# Place your existing bot parameter code block here, or request if you need the full integrated version.
+# --- .set/.ini parameter parsing and download (add this block below for bot parameter editing) ---
+# [Insert your existing .set/.ini parameter code block here if needed.]
 
 st.markdown("---")
 st.caption("TraderIQ: Now supports raw CSVs or full MT5 report files for ultimate flexibility!")
