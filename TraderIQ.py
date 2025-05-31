@@ -12,7 +12,7 @@ import time
 # --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. CSS Styling for dark theme, button, and background watermark ---
+# --- 2. CSS Styling for dark theme and button (NO watermark) ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
@@ -76,28 +76,6 @@ footer {visibility: hidden;}
 .css-1avcm0n {
     color: #6e7caa !important;
     font-style: italic;
-}
-
-/* Terminal watermark background using uploaded image */
-.main .block-container {
-    position: relative;
-    z-index: 1;
-}
-.main .block-container::before {
-    content: "";
-    position: fixed;
-    top: 80px;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background-image: url("/mnt/data/terminal.png");
-    background-repeat: no-repeat;
-    background-position: center center;
-    background-size: 60vw;
-    opacity: 0.05;
-    z-index: 0;
-    pointer-events: none;
-    filter: grayscale(80%) brightness(60%);
 }
 </style>
 """, unsafe_allow_html=True)
