@@ -6,7 +6,7 @@ import numpy as np
 import os
 from PIL import Image
 
-# --- PAGE CONFIG (must be very first Streamlit command) ---
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
 
 # --- LOGO: Safe loading (only if file exists) ---
@@ -54,13 +54,29 @@ def extract_trades_from_mt5_report(file):
     trades_df = pd.read_csv(StringIO("\n".join(table_lines)))
     return trades_df
 
-# --- UNIVERSAL .set/.ini parser with debug ---
+# --- UNIVERSAL .set/.ini parser with robust encoding (handles MT5 .set) ---
 def parse_ini_setfile(file):
     file.seek(0)
     content = file.read()
-    if isinstance(content, bytes):
-        content = content.decode("utf-8", errors="replace")
-    lines = content.splitlines()
+    tried_decodings = []
+    for encoding in ("utf-16", "utf-16le", "utf-8", "latin-1"):
+        try:
+            if isinstance(content, bytes):
+                decoded = content.decode(encoding)
+            else:
+                decoded = content
+            # Remove null bytes if present
+            if '\x00' in decoded:
+                decoded = decoded.replace('\x00', '')
+            # Only keep if it actually finds parameter-like lines
+            if sum(1 for l in decoded.splitlines() if '=' in l or l.strip().startswith('[')) > 2:
+                break
+        except Exception:
+            tried_decodings.append(encoding)
+            continue
+    else:
+        decoded = content if isinstance(content, str) else ""
+    lines = decoded.splitlines()
     sections = {}
     current_section = "Parameters"
     output_lines = []
@@ -208,4 +224,4 @@ if editable_params:
     st.download_button("📥 Download Optimized Settings File", "\n".join(output_lines), "TraderIQ_Optimized.set")
 
 st.markdown("---")
-st.caption("TraderIQ: Debug enabled! If you upload a .set/.ini file and see nothing, check the SET FILE DEBUG box above—copy-paste here if you want custom parser help!")
+st.caption("TraderIQ: Now reads all encodings for .set/.ini! If you see anything odd, paste it here and I’ll perfect it.")
