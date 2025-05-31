@@ -15,7 +15,6 @@ def extract_trades_from_mt5_report(file):
     if isinstance(content, bytes):
         content = content.decode("utf-8", errors="replace")
     lines = content.splitlines()
-    # Flexible: look for header row that has Profit and (Ticket or Order)
     trade_table_start = None
     for idx, line in enumerate(lines):
         if "Profit" in line and ("Ticket" in line or "Order" in line):
@@ -45,7 +44,7 @@ def extract_trades_from_mt5_report(file):
 
 # --- Helper for .set/.ini parsing and UI ---
 def parse_ini_setfile(file):
-    file.seek(0)  # Reset pointer before read
+    file.seek(0)
     content = file.read()
     if isinstance(content, bytes):
         content = content.decode("utf-8", errors="replace")
@@ -87,6 +86,12 @@ if uploaded_csv:
         except Exception as e:
             st.error(f"Failed to extract trades from uploaded CSV/report: {e}")
             df = None
+
+# --- DEBUG SECTION: show preview and columns ---
+if df is not None:
+    st.markdown("#### 🐞 DEBUG: Data Preview & Columns")
+    st.write(df.head())
+    st.write("Columns detected:", list(df.columns))
 
 # --- CSV Analysis (only if df loaded) ---
 if df is not None:
@@ -136,7 +141,6 @@ if uploaded_set:
             if line.strip().startswith(";") or '=' not in line:
                 st.write(line)
                 continue
-            # Parse key and value, also try to parse min/max if present
             key, value = line.split('=', 1)
             key = key.strip()
             main_val = value.split('||')[0].strip()
@@ -144,7 +148,7 @@ if uploaded_set:
                 val_bool = True if main_val.lower() == "true" else False
                 val = st.checkbox(key, val_bool)
                 editable_params[key] = f"{str(val).lower()}{value[len(main_val):]}"
-            elif re.match(r'^-?\d+(\.\d+)?$', main_val):  # It's a number
+            elif re.match(r'^-?\d+(\.\d+)?$', main_val):
                 try:
                     parts = value.split('||')
                     min_val = float(parts[2])
@@ -159,7 +163,6 @@ if uploaded_set:
                 editable_params[key] = f"{val_str}{value[len(main_val):]}"
         st.markdown("---")
 
-# --- Download optimized .set/.ini file ---
 if editable_params:
     st.success("Download your optimized set/ini file for MT5 below:")
     output_lines = []
@@ -175,4 +178,4 @@ if editable_params:
     st.download_button("📥 Download Optimized Settings File", "\n".join(output_lines), "TraderIQ_Optimized.set")
 
 st.markdown("---")
-st.caption("TraderIQ: Unicode-safe, robust, and fully compatible with all your MT5 CSV and .set/.ini files!")
+st.caption("TraderIQ: Debug enabled! See data details above to troubleshoot uploads. If anything is empty, check your input files.")
