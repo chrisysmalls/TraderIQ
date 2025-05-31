@@ -13,7 +13,7 @@ import streamlit.components.v1 as components
 # --- 1. SET PAGE CONFIG FIRST (No Streamlit commands before this!) ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. CSS Styling for smaller button ---
+# --- 2. CSS Styling for smaller button and dark theme ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
@@ -23,130 +23,69 @@ div.stButton > button:first-child {
     min-width: 200px;
     border-radius: 10px;
 }
+body, .main, .block-container {
+    background-color: #0f111a;
+    color: #e0e6f8;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+.css-1d391kg, .css-1v3fvcr {
+    background: rgba(20, 25, 50, 0.8);
+    backdrop-filter: blur(15px);
+    border-radius: 12px;
+    padding: 20px;
+}
+h1, h2, h3, h4, h5, h6 {
+    color: #68c0ff !important;
+    text-shadow: 0 0 8px #68c0ff;
+}
+input, textarea {
+    background-color: #1b2038 !important;
+    color: #e0e6f8 !important;
+    border-radius: 10px !important;
+    border: 1px solid #3a4a75 !important;
+    padding: 10px !important;
+}
+thead tr th {
+    background: #1c2a53 !important;
+    color: #68c0ff !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    text-shadow: 0 0 4px #68c0ff;
+}
+tbody tr {
+    background: #0f111a !important;
+    border-bottom: 1px solid #2c3e75 !important;
+}
+tbody tr:hover {
+    background: #1a2a59 !important;
+}
+.stPlotlyChart > div > div > div {
+    background-color: #0f111a !important;
+}
+footer {visibility: hidden;}
+.css-1d391kg {
+    scrollbar-width: thin;
+    scrollbar-color: #68c0ff #0f111a;
+}
+.css-1d391kg::-webkit-scrollbar {
+    width: 8px;
+}
+.css-1d391kg::-webkit-scrollbar-thumb {
+    background-color: #68c0ff;
+    border-radius: 10px;
+}
+.css-1avcm0n {
+    color: #6e7caa !important;
+    font-style: italic;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. Inject Dark Futuristic CSS and Animated Button/Menu ---
-st.markdown(
-    """
-    <style>
-    /* Dark theme + other styles omitted for brevity, keep your existing styles here */
-    body, .main, .block-container {
-        background-color: #0f111a;
-        color: #e0e6f8;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .css-1d391kg, .css-1v3fvcr {
-        background: rgba(20, 25, 50, 0.8);
-        backdrop-filter: blur(15px);
-        border-radius: 12px;
-        padding: 20px;
-    }
-    h1, h2, h3, h4, h5, h6 {
-        color: #68c0ff !important;
-        text-shadow: 0 0 8px #68c0ff;
-    }
-    @keyframes glow {
-      0% { box-shadow: 0 0 5px #0ff; }
-      50% { box-shadow: 0 0 20px #0ff; }
-      100% { box-shadow: 0 0 5px #0ff; }
-    }
-    .animated-button {
-      background: linear-gradient(90deg, #00f0ff, #0078ff);
-      border-radius: 12px;
-      color: white;
-      font-weight: 700;
-      cursor: pointer;
-      animation: glow 2s infinite;
-      border: none;
-      width: 100%;
-      text-align: center;
-      transition: transform 0.2s ease;
-      margin-bottom: 10px;
-      font-size: 18px;
-      padding: 12px;
-      min-width: 200px;
-    }
-    .animated-button:hover {
-      transform: scale(1.05);
-      box-shadow: 0 0 25px #00f0ff;
-    }
-    .animated-menu {
-      background: rgba(0, 255, 255, 0.15);
-      border-radius: 10px;
-      padding: 10px;
-      color: #00ffff;
-      font-weight: 600;
-      margin-top: 10px;
-      display: none;
-    }
-    input, textarea {
-        background-color: #1b2038 !important;
-        color: #e0e6f8 !important;
-        border-radius: 10px !important;
-        border: 1px solid #3a4a75 !important;
-        padding: 10px !important;
-    }
-    thead tr th {
-        background: #1c2a53 !important;
-        color: #68c0ff !important;
-        font-weight: 700 !important;
-        text-align: center !important;
-        text-shadow: 0 0 4px #68c0ff;
-    }
-    tbody tr {
-        background: #0f111a !important;
-        border-bottom: 1px solid #2c3e75 !important;
-    }
-    tbody tr:hover {
-        background: #1a2a59 !important;
-    }
-    .stPlotlyChart > div > div > div {
-        background-color: #0f111a !important;
-    }
-    footer {visibility: hidden;}
-    .css-1d391kg {
-        scrollbar-width: thin;
-        scrollbar-color: #68c0ff #0f111a;
-    }
-    .css-1d391kg::-webkit-scrollbar {
-        width: 8px;
-    }
-    .css-1d391kg::-webkit-scrollbar-thumb {
-        background-color: #68c0ff;
-        border-radius: 10px;
-    }
-    .css-1avcm0n {
-        color: #6e7caa !important;
-        font-style: italic;
-    }
-    </style>
+# --- 3. Remove big animated button from HTML/JS injection ---
+# We skip injecting any big button now (no <button id="optimizeBtn">)
+# We only keep small helper scripts if needed or just skip
 
-    <div>
-      <button class="animated-button" id="optimizeBtn">🔍 Analyze & Optimize</button>
-      <div class="animated-menu" id="menu">
-        <p>Advanced Options:</p>
-        <ul>
-          <li>Auto Risk Adjustment</li>
-          <li>Volatility Based Stops</li>
-          <li>Overfitting Alerts</li>
-        </ul>
-      </div>
-    </div>
-
-    <script>
-      const btn = document.getElementById("optimizeBtn");
-      const menu = document.getElementById("menu");
-      btn.onclick = () => {
-        menu.style.display = (menu.style.display === "block") ? "none" : "block";
-        window.parent.postMessage({streamlitEvent: "optimize_clicked"}, "*");
-      }
-    </script>
-    """,
-    unsafe_allow_html=True,
-)
-
-# --- 4. Capture JS event in Streamlit ---
+# If you want, you can still keep the JS listener if you plan to trigger via JS event:
 components.html("""
 <script>
 window.addEventListener('message', (event) => {
@@ -157,17 +96,140 @@ window.addEventListener('message', (event) => {
 </script>
 """)
 
+# --- 4. Session state for optimize clicked ---
 if "optimize_clicked" not in st.session_state:
     st.session_state.optimize_clicked = False
 
-# --- 5. Uploaders ---
+# --- 5. Sidebar uploaders ---
 uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
 uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
 st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
 
-# --- 6. Helper functions (include your full helper code here) ---
-# For brevity, ensure your parse_set_file, parse_mt5_report, calculate_metrics,
-# generate_equity_curve_plot, clamp, clean_profit_value etc are defined here as before.
+# --- 6. Helper functions ---
+def clamp(value, min_val, max_val):
+    return max(min_val, min(max_val, value))
+
+def clean_profit_value(val):
+    try:
+        if pd.isna(val):
+            return np.nan
+        s = str(val).replace(" ", "").replace(",", "")
+        if s in ['', '-', '--']:
+            return 0.0
+        if s.startswith('-.'):
+            s = '-0.' + s[2:]
+        return float(s)
+    except:
+        return np.nan
+
+def calculate_max_drawdown(profits_series):
+    equity_curve = profits_series.cumsum()
+    roll_max = equity_curve.cummax()
+    drawdown = (equity_curve - roll_max)
+    max_dd = drawdown.min() if len(drawdown) > 0 else 0
+    return abs(max_dd)
+
+def calculate_metrics(profits_series):
+    total_trades = profits_series.count()
+    wins = profits_series[profits_series > 0]
+    losses = profits_series[profits_series < 0]
+    win_rate = len(wins) / total_trades * 100 if total_trades else 0
+    total_profit = profits_series.sum()
+    avg_win = wins.mean() if len(wins) > 0 else 0
+    avg_loss = losses.mean() if len(losses) > 0 else 0
+    profit_factor = wins.sum() / abs(losses.sum()) if abs(losses.sum()) > 0 else float('inf')
+    expectancy = ((len(wins) * avg_win) + (len(losses) * avg_loss)) / total_trades if total_trades else 0
+    sharpe_ratio = profits_series.mean() / profits_series.std() * np.sqrt(252) if profits_series.std() != 0 else 0
+    max_drawdown = calculate_max_drawdown(profits_series)
+    return {
+        'total_trades': total_trades,
+        'win_rate': win_rate,
+        'total_profit': total_profit,
+        'avg_win': avg_win,
+        'avg_loss': avg_loss,
+        'profit_factor': profit_factor,
+        'expectancy': expectancy,
+        'sharpe_ratio': sharpe_ratio,
+        'max_drawdown': max_drawdown
+    }
+
+def decode_file(file):
+    content = file.read()
+    for encoding in ['utf-8', 'utf-16', 'latin-1']:
+        try:
+            return content.decode(encoding)
+        except Exception:
+            continue
+    return content.decode('utf-8', errors='replace')
+
+def parse_mt5_report(file):
+    file.seek(0)
+    text = decode_file(file)
+    lines = text.splitlines()
+    header_idx = None
+    for i, line in enumerate(lines):
+        if ("Profit" in line) and ("Ticket" in line or "Order" in line):
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("Could not find trades table header with 'Profit'.")
+    end_idx = None
+    for i in range(header_idx+1, len(lines)):
+        if lines[i].strip() == "" or any(x in lines[i] for x in ["Summary", "Report", "[", "input"]):
+            end_idx = i
+            break
+    if end_idx is None:
+        end_idx = len(lines)
+    table_lines = lines[header_idx:end_idx]
+    df = pd.read_csv(io.StringIO("\n".join(table_lines)))
+    return df
+
+def parse_set_file(file):
+    file.seek(0)
+    raw = file.read()
+    for encoding in ['utf-16', 'utf-8', 'latin-1']:
+        try:
+            if isinstance(raw, bytes):
+                content = raw.decode(encoding)
+            else:
+                content = raw
+            if '\x00' in content:
+                content = content.replace('\x00', '')
+            break
+        except Exception:
+            continue
+    else:
+        content = raw.decode('utf-8', errors='replace') if isinstance(raw, bytes) else raw
+
+    lines = content.splitlines()
+    sections = {}
+    current_section = "Parameters"
+    sections[current_section] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped.strip("[]")
+            sections[current_section] = []
+        elif '=' in line and not stripped.startswith(";"):
+            sections[current_section].append(line)
+        else:
+            sections.setdefault(current_section, []).append(line)
+    return sections, lines
+
+def generate_equity_curve_plot(profits_series):
+    mpl.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(6, 3))  # smaller size
+    equity = profits_series.cumsum()
+    ax.plot(equity, color='#00f0ff', linewidth=2, label='Equity Curve')
+    ax.fill_between(equity.index, equity, equity.cummax(), color='#004466', alpha=0.5, label='Drawdown')
+    ax.set_title("Equity Curve with Drawdown", color='#68c0ff')
+    ax.set_xlabel("Trade Number", color='#68c0ff')
+    ax.set_ylabel("Cumulative Profit", color='#68c0ff')
+    ax.tick_params(colors='#68c0ff')
+    ax.legend(facecolor='#0f111a', edgecolor='#68c0ff', labelcolor='#68c0ff')
+    ax.grid(True, color='#1a2a59')
+    plt.tight_layout()
+    return fig
 
 # --- 7. Main logic ---
 editable_params = {}
@@ -223,9 +285,9 @@ if uploaded_csv:
         fig = generate_equity_curve_plot(profits)
         st.pyplot(fig)
 
-# --- 8. Show button only if both files uploaded ---
+# --- 8. Show smaller button ONLY in sidebar and only after BOTH files uploaded ---
 if uploaded_csv is not None and uploaded_set is not None:
-    if st.button("🔍 Analyze & Optimize Settings Automatically", key="optimize_btn"):
+    if st.sidebar.button("🔍 Analyze & Optimize Settings Automatically"):
         st.session_state.optimize_clicked = True
 
 # --- 9. Run optimization if button clicked ---
