@@ -1,276 +1,365 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import re
 import numpy as np
 import os
 from PIL import Image
+import io
+import json
+import base64
+import datetime
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
+st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- LOGO: Load from same folder as script ---
+# --- LOGO ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 logo_path = os.path.join(BASE_DIR, "TradeIQ.png")
-
 if os.path.exists(logo_path):
     try:
         logo = Image.open(logo_path)
-        st.image(logo, width=150)
+        st.sidebar.image(logo, width=150)
     except Exception:
-        st.warning("Logo found on disk but could not be opened.")
+        st.sidebar.warning("Logo found but could not be opened.")
 else:
-    st.info(f"Logo missing: Place your logo file as {logo_path}")
+    st.sidebar.info(f"Logo missing: Place your logo as {logo_path}")
 
-st.title("🧠 TraderIQ: MT5 Backtest Analyzer & Optimizer")
-st.subheader("Analyze, Optimize, and Export Smarter Bot Settings Automatically.")
+st.title("🧠 TraderIQ: Advanced MT5 Backtest Analyzer & Optimizer")
+st.sidebar.markdown("## Upload your MT5 Backtest Data and EA Set File")
 
-# --- File Uploaders (MUST come before usage!) ---
-uploaded_csv = st.file_uploader("Step 1: Upload your MT5 Backtest CSV or Report", type=["csv"])
-uploaded_set = st.file_uploader(
-    "Step 2: Upload your EA's .set or .ini file",
-    type=["set", "ini"]
-)
-st.caption("CSV: Either a trade log or a full MT5 report. .set/.ini: Your bot settings.")
+# --- FILE UPLOAD ---
+uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
+uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
 
-# --- Helper to robustly extract trades table from any MT5 report ---
-def extract_trades_from_mt5_report(file):
-    file.seek(0)
+# --- HELPER FUNCTIONS ---
+
+def decode_file(file):
     content = file.read()
-    if isinstance(content, bytes):
-        content = content.decode("utf-8", errors="replace")
-    lines = content.splitlines()
-    trade_table_start = None
-    for idx, line in enumerate(lines):
-        if "Profit" in line and ("Ticket" in line or "Order" in line):
-            trade_table_start = idx
-            break
-    if trade_table_start is None:
-        for idx, line in enumerate(lines):
-            if "Profit" in line:
-                trade_table_start = idx
-                break
-    if trade_table_start is None:
-        raise ValueError("Could not find trades table header (with 'Profit') in uploaded file.")
-    trade_table_end = None
-    for idx in range(trade_table_start + 1, len(lines)):
-        if lines[idx].strip() == "" or any(x in lines[idx] for x in ["Summary", "Report", "[", "input"]):
-            trade_table_end = idx
-            break
-    if trade_table_end is None:
-        trade_table_end = len(lines)
-    table_lines = lines[trade_table_start:trade_table_end]
-    from io import StringIO
-    trades_df = pd.read_csv(StringIO("\n".join(table_lines)))
-    return trades_df
-
-# --- UNIVERSAL .set/.ini parser with robust encoding (handles MT5 .set) ---
-def parse_ini_setfile(file):
-    file.seek(0)
-    content = file.read()
-    tried_decodings = []
-    for encoding in ("utf-16", "utf-16le", "utf-8", "latin-1"):
+    for encoding in ['utf-8', 'utf-16', 'latin-1']:
         try:
-            if isinstance(content, bytes):
-                decoded = content.decode(encoding)
-            else:
-                decoded = content
-            if '\x00' in decoded:
-                decoded = decoded.replace('\x00', '')
-            if sum(1 for l in decoded.splitlines() if '=' in l or l.strip().startswith('[')) > 2:
-                break
+            return content.decode(encoding)
         except Exception:
-            tried_decodings.append(encoding)
+            continue
+    return content.decode('utf-8', errors='replace')
+
+def parse_mt5_report(file):
+    """Extract trade table from MT5 report format."""
+    file.seek(0)
+    text = decode_file(file)
+    lines = text.splitlines()
+    header_idx = None
+    for i, line in enumerate(lines):
+        if ("Profit" in line) and ("Ticket" in line or "Order" in line):
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("Could not find trades table header with 'Profit'.")
+    # Find end of table (empty line or summary)
+    end_idx = None
+    for i in range(header_idx+1, len(lines)):
+        if lines[i].strip() == "" or any(x in lines[i] for x in ["Summary", "Report", "[", "input"]):
+            end_idx = i
+            break
+    if end_idx is None:
+        end_idx = len(lines)
+    table_lines = lines[header_idx:end_idx]
+    df = pd.read_csv(io.StringIO("\n".join(table_lines)))
+    return df
+
+def parse_set_file(file):
+    """Parse .set/.ini file robustly, supporting multiple encodings and sections."""
+    file.seek(0)
+    raw = file.read()
+    for encoding in ['utf-16', 'utf-8', 'latin-1']:
+        try:
+            if isinstance(raw, bytes):
+                content = raw.decode(encoding)
+            else:
+                content = raw
+            if '\x00' in content:
+                content = content.replace('\x00', '')
+            break
+        except Exception:
             continue
     else:
-        decoded = content if isinstance(content, str) else ""
-    lines = decoded.splitlines()
+        content = raw.decode('utf-8', errors='replace') if isinstance(raw, bytes) else raw
+
+    lines = content.splitlines()
     sections = {}
     current_section = "Parameters"
-    output_lines = []
     sections[current_section] = []
     for line in lines:
-        output_lines.append(line)
         stripped = line.strip()
-        if stripped.startswith('[') and stripped.endswith(']'):
-            current_section = stripped.strip('[]')
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped.strip("[]")
             sections[current_section] = []
-        elif '=' in line and not stripped.startswith(";") and stripped != "":
+        elif '=' in line and not stripped.startswith(";"):
+            sections[current_section].append(line)
+        else:
+            # comments or blank lines kept in main section to preserve file integrity
             sections.setdefault(current_section, []).append(line)
-    return sections, output_lines
+    return sections, lines
 
-# --- Load and parse CSV, handling both raw and report formats ---
-df = None
-profit_col = None
-profits = None
-total_trades = 0
-profit_factor = 1.0
+def clean_profit_value(val):
+    """Sanitize and convert profit values to float."""
+    try:
+        if pd.isna(val):
+            return np.nan
+        s = str(val).replace(" ", "").replace(",", "")
+        if s in ['', '-', '--']:
+            return 0.0
+        if s.startswith('-.'):
+            s = '-0.' + s[2:]
+        return float(s)
+    except:
+        return np.nan
+
+def calculate_metrics(profits_series):
+    total_trades = profits_series.count()
+    wins = profits_series[profits_series > 0]
+    losses = profits_series[profits_series < 0]
+    win_rate = len(wins) / total_trades * 100 if total_trades else 0
+    total_profit = profits_series.sum()
+    avg_win = wins.mean() if len(wins) > 0 else 0
+    avg_loss = losses.mean() if len(losses) > 0 else 0
+    profit_factor = wins.sum() / abs(losses.sum()) if abs(losses.sum()) > 0 else float('inf')
+    expectancy = ((len(wins) * avg_win) + (len(losses) * avg_loss)) / total_trades if total_trades else 0
+    sharpe_ratio = profits_series.mean() / profits_series.std() * np.sqrt(252) if profits_series.std() != 0 else 0
+    max_drawdown = calculate_max_drawdown(profits_series)
+    return {
+        'total_trades': total_trades,
+        'win_rate': win_rate,
+        'total_profit': total_profit,
+        'avg_win': avg_win,
+        'avg_loss': avg_loss,
+        'profit_factor': profit_factor,
+        'expectancy': expectancy,
+        'sharpe_ratio': sharpe_ratio,
+        'max_drawdown': max_drawdown
+    }
+
+def calculate_max_drawdown(profits_series):
+    """Calculate max drawdown from equity curve."""
+    equity_curve = profits_series.cumsum()
+    roll_max = equity_curve.cummax()
+    drawdown = (equity_curve - roll_max)
+    max_dd = drawdown.min() if len(drawdown) > 0 else 0
+    return abs(max_dd)
+
+def generate_equity_curve_plot(profits_series):
+    equity = profits_series.cumsum()
+    fig, ax = plt.subplots(figsize=(10,4))
+    ax.plot(equity, label='Equity Curve')
+    ax.fill_between(equity.index, equity, equity.cummax(), color='red', alpha=0.3, label='Drawdown')
+    ax.set_title("Equity Curve with Drawdown")
+    ax.set_xlabel("Trade Number")
+    ax.set_ylabel("Cumulative Profit")
+    ax.legend()
+    ax.grid(True)
+    return fig
+
+def clamp(value, min_val, max_val):
+    return max(min_val, min(max_val, value))
+
+def optimize_parameters(params, metrics):
+    messages = []
+    optimized = params.copy()
+
+    # Basic statistics
+    avg_win = metrics['avg_win']
+    avg_loss = abs(metrics['avg_loss'])
+    rr = avg_win / avg_loss if avg_loss > 0 else 2.0
+    profit_factor = metrics['profit_factor']
+    max_dd = metrics['max_drawdown']
+    win_rate = metrics['win_rate']
+
+    # Adjust TakeProfit and StopLoss to target RR ~2 with clamping
+    if "TakeProfit" in optimized and "StopLoss" in optimized:
+        try:
+            old_tp = float(optimized["TakeProfit"])
+            old_sl = float(optimized["StopLoss"])
+
+            # Tighten stops if drawdown high or volatility (estimate by max_dd)
+            vol_factor = 1.0 if max_dd < 10 else 0.7
+            new_sl = clamp(min(old_sl, avg_loss * 1.1) * vol_factor, 2, 500)
+            new_tp = clamp(new_sl * 2.0, 5, 1000)
+
+            optimized["TakeProfit"] = str(round(new_tp, 2))
+            optimized["StopLoss"] = str(round(new_sl, 2))
+            messages.append(f"Set TakeProfit to {new_tp} and StopLoss to {new_sl} to maintain ~2:1 risk-reward considering volatility.")
+        except:
+            pass
+
+    # RiskPercent adaptive tuning
+    if "RiskPercent" in optimized:
+        try:
+            old_risk = float(optimized["RiskPercent"])
+            risk_factor = 1.0
+            if max_dd > 15:
+                risk_factor *= 0.5
+            elif max_dd > 10:
+                risk_factor *= 0.7
+            if profit_factor < 1.5:
+                risk_factor *= 0.7
+            new_risk = clamp(old_risk * risk_factor, 0.1, old_risk)
+            optimized["RiskPercent"] = str(round(new_risk, 3))
+            messages.append(f"Adjusted RiskPercent from {old_risk} to {new_risk} based on drawdown and profit factor.")
+        except:
+            pass
+
+    # Moving averages smoothing adjustments
+    if "MovingAveragePeriodShort" in optimized and "MovingAveragePeriodLong" in optimized:
+        try:
+            short_ma = int(optimized["MovingAveragePeriodShort"])
+            long_ma = int(optimized["MovingAveragePeriodLong"])
+            short_ma = clamp(short_ma, 5, 50)
+            long_ma = clamp(long_ma, short_ma + 5, 200)
+            optimized["MovingAveragePeriodShort"] = str(short_ma)
+            optimized["MovingAveragePeriodLong"] = str(long_ma)
+            messages.append(f"Set MA periods to Short={short_ma}, Long={long_ma} for noise reduction.")
+        except:
+            pass
+
+    # RSI tuning
+    if "RSIPeriod" in optimized and "RSIOverbought" in optimized and "RSIOversold" in optimized:
+        try:
+            rsi_period = int(optimized["RSIPeriod"])
+            overbought = int(optimized["RSIOverbought"])
+            oversold = int(optimized["RSIOversold"])
+            rsi_period = clamp(rsi_period, 7, 21)
+            overbought = clamp(overbought, 70, 90)
+            oversold = clamp(oversold, 10, 30)
+            optimized["RSIPeriod"] = str(rsi_period)
+            optimized["RSIOverbought"] = str(overbought)
+            optimized["RSIOversold"] = str(oversold)
+            messages.append(f"Tuned RSI parameters: Period={rsi_period}, Overbought={overbought}, Oversold={oversold}.")
+        except:
+            pass
+
+    # Overfitting detection heuristic
+    try:
+        if "TakeProfit" in optimized:
+            tp_val = float(optimized["TakeProfit"])
+            if tp_val > 5 * avg_win and avg_win > 0:
+                messages.append("Warning: TakeProfit unusually high compared to average wins — possible overfitting.")
+    except:
+        pass
+
+    return optimized, messages
+
+def download_link(content: str, filename: str, link_text: str):
+    b64 = base64.b64encode(content.encode()).decode()
+    href = f'<a href="data:file/txt;base64,{b64}" download="{filename}">{link_text}</a>'
+    return href
+
+# --- MAIN APP LOGIC ---
+
+# Parse set file
+editable_params = {}
+full_output_lines = []
+optimized_params = {}
+metrics = {}
+
+if uploaded_set:
+    sections, full_output_lines = parse_set_file(uploaded_set)
+    st.sidebar.markdown("### EA Parameters Detected")
+    for sec, lines in sections.items():
+        st.sidebar.markdown(f"**[{sec}]**")
+        for line in lines:
+            if '=' in line and not line.strip().startswith(";"):
+                key, val = line.split('=', 1)
+                editable_params[key.strip()] = val.split('||')[0].strip()
+
+# Process CSV and calculate metrics
 if uploaded_csv:
     try:
         uploaded_csv.seek(0)
         df = pd.read_csv(uploaded_csv)
         if "Profit" not in df.columns:
-            raise Exception("No 'Profit' column found; attempting report extract...")
+            raise Exception("No 'Profit' column found; attempting MT5 report parsing.")
     except Exception:
         uploaded_csv.seek(0)
         try:
-            df = extract_trades_from_mt5_report(uploaded_csv)
-            st.success("Extracted trade table from report!")
+            df = parse_mt5_report(uploaded_csv)
+            st.success("Extracted trade table from MT5 report.")
         except Exception as e:
-            st.error(f"Failed to extract trades from uploaded CSV/report: {e}")
+            st.error(f"Error parsing CSV/report: {e}")
             df = None
 
-# --- CSV analysis and metrics ---
-if df is not None:
-    st.markdown("#### CSV Preview & Columns")
-    st.write(df.head())
-    st.write("Columns detected:", list(df.columns))
+    if df is not None:
+        profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
+        if profit_col is None:
+            st.error("Profit column missing in data.")
+            st.stop()
+        profits = df[profit_col].apply(clean_profit_value).dropna()
+        metrics = calculate_metrics(profits)
 
-    profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
-    if not profit_col:
-        st.error("Profit column not found. Please upload a standard MT5 results CSV or report with trade table.")
-        st.stop()
+        # Show metrics
+        st.subheader("Backtest Metrics")
+        st.write(metrics)
 
-    def clean_profit(val):
-        if pd.isnull(val):
-            return np.nan
-        val = str(val).replace(" ", "").replace(",", "")
-        if val in ['', '-', '--']:
-            return 0.0
-        if val.startswith('-.'):
-            val = '-0.' + val[2:]
-        try:
-            return float(val)
-        except Exception:
-            val = val.replace('--', '-')
-            try:
-                return float(val)
-            except:
-                return np.nan
+        # Equity curve plot
+        fig = generate_equity_curve_plot(profits)
+        st.pyplot(fig)
 
-    profits = df[profit_col].apply(clean_profit)
-    total_trades = len(profits.dropna())
-    win_rate = (profits > 0).sum() / total_trades * 100 if total_trades else 0
-    total_profit = profits.sum()
-    avg_win = profits[profits > 0].mean() if (profits > 0).sum() else 0
-    avg_loss = profits[profits < 0].mean() if (profits < 0).sum() else 0
-    profit_factor = profits[profits > 0].sum() / abs(profits[profits < 0].sum()) if (profits < 0).sum() else float('inf')
-    expectancy = ((profits > 0).sum() * avg_win + (profits < 0).sum() * avg_loss) / total_trades if total_trades else 0
+# OPTIMIZATION UI
+if editable_params and metrics:
+    if st.button("Run Advanced Optimization"):
+        optimized_params, messages = optimize_parameters(editable_params, metrics)
+        st.subheader("Optimization Suggestions & Changes")
+        for msg in messages:
+            st.write("- " + msg)
 
-    st.markdown(f"""
-    ### Backtest Metrics:
-    - **Total Trades:** {total_trades}
-    - **Win Rate:** {win_rate:.2f}%
-    - **Total Profit:** {total_profit:.2f}
-    - **Profit Factor:** {profit_factor:.2f}
-    - **Expectancy:** {expectancy:.2f}
-    """)
+        # Display old vs new parameters side by side
+        st.subheader("Parameter Comparison")
+        param_keys = sorted(set(editable_params.keys()) | set(optimized_params.keys()))
+        comp_data = []
+        for k in param_keys:
+            comp_data.append({
+                "Parameter": k,
+                "Original": editable_params.get(k, ""),
+                "Optimized": optimized_params.get(k, editable_params.get(k, ""))
+            })
+        st.table(comp_data)
 
-    st.subheader("Equity Curve")
-    balance = profits.cumsum()
-    fig, ax = plt.subplots(figsize=(8,3))
-    ax.plot(balance.values)
-    ax.set_title("Equity Curve")
-    ax.set_xlabel("Trade Number")
-    ax.set_ylabel("Cumulative Profit")
-    ax.grid(True)
-    st.pyplot(fig)
-
-# --- .set/.ini parameter parsing, analysis, and optimizer ---
-editable_params = {}
-full_output_lines = []
-optimized_params = {}
-
-if uploaded_set:
-    sections, full_output_lines = parse_ini_setfile(uploaded_set)
-    st.markdown("SET FILE RAW CONTENT")
-    st.code("\n".join(full_output_lines) if full_output_lines else "No lines read from file.")
-
-    st.markdown("EA Parameters Detected (Edit as Needed)")
-    for section, lines in sections.items():
-        st.markdown(f"[{section}]")
-        for line in lines:
-            if line.strip().startswith(";") or '=' not in line:
-                st.write(line)
-                continue
-            key, value = line.split('=', 1)
-            key = key.strip()
-            main_val = value.split('||')[0].strip()
-            editable_params[key] = main_val
-        st.markdown("---")
-
-    if df is not None and profit_col is not None:
-        if st.button("Analyze & Optimize Settings Automatically"):
-            st.success("Optimization complete! Scroll down for the new settings and download.")
-
-            optimized_params = editable_params.copy()
-            messages = []
-            if "TakeProfit" in optimized_params:
-                try:
-                    avg_win = profits[profits > 0].mean()
-                    new_tp = round(avg_win, 2)
-                    if new_tp > 0:
-                        old = float(optimized_params["TakeProfit"])
-                        optimized_params["TakeProfit"] = str(new_tp)
-                        messages.append(f"Increased TakeProfit from {old} to {new_tp} (based on average winning trade).")
-                except Exception:
-                    pass
-            if "StopLoss" in optimized_params:
-                try:
-                    avg_loss = abs(profits[profits < 0].mean())
-                    new_sl = round(avg_loss, 2)
-                    if new_sl > 0:
-                        old = float(optimized_params["StopLoss"])
-                        optimized_params["StopLoss"] = str(new_sl)
-                        messages.append(f"Adjusted StopLoss from {old} to {new_sl} (based on average losing trade).")
-                except Exception:
-                    pass
-            if "RiskPercent" in optimized_params:
-                try:
-                    if profit_factor < 1.5:
-                        old = float(optimized_params["RiskPercent"])
-                        new_risk = max(0.5, old * 0.75)
-                        optimized_params["RiskPercent"] = str(round(new_risk, 2))
-                        messages.append(f"Reduced RiskPercent from {old} to {new_risk} to lower drawdown.")
-                except Exception:
-                    pass
-            if not messages:
-                messages.append("No automatic improvements found. Review parameters manually.")
-
-            st.markdown("Optimization Suggestions")
-            for msg in messages:
-                st.write(msg)
-
-            st.markdown("Optimized Settings (Download Below)")
-            output_lines = []
-            for line in full_output_lines:
-                if '=' in line and not line.strip().startswith(';'):
-                    key = line.split('=', 1)[0].strip()
-                    if key in optimized_params:
-                        output_lines.append(f"{key}={optimized_params[key]}")
-                    else:
-                        output_lines.append(line)
+        # Generate new setfile text
+        output_lines = []
+        for line in full_output_lines:
+            if '=' in line and not line.strip().startswith(";"):
+                key = line.split('=',1)[0].strip()
+                val = optimized_params.get(key, None)
+                if val is not None:
+                    output_lines.append(f"{key}={val}")
                 else:
                     output_lines.append(line)
-            st.download_button("Download Optimized Set File", "\n".join(output_lines), "TraderIQ_Optimized.set")
+            else:
+                output_lines.append(line)
+        new_setfile_text = "\n".join(output_lines)
+        st.markdown("### Download Optimized Set File")
+        st.markdown(download_link(new_setfile_text, "TraderIQ_Optimized.set", "📥 Click here to download"), unsafe_allow_html=True)
 
-# --- Manual editing fallback ---
+# Manual parameter editing fallback
 if editable_params and not optimized_params:
-    st.markdown("Or adjust parameters below manually:")
-    for key, main_val in editable_params.items():
-        val = st.text_input(key, main_val)
-        editable_params[key] = val
+    st.subheader("Manual Parameter Editor")
+    for key, val in editable_params.items():
+        new_val = st.text_input(key, val)
+        editable_params[key] = new_val
+
     output_lines = []
     for line in full_output_lines:
-        if '=' in line and not line.strip().startswith(';'):
+        if '=' in line and not line.strip().startswith(";"):
             key = line.split('=',1)[0].strip()
-            if key in editable_params:
-                output_lines.append(f"{key}={editable_params[key]}")
+            val = editable_params.get(key, None)
+            if val is not None:
+                output_lines.append(f"{key}={val}")
             else:
                 output_lines.append(line)
         else:
             output_lines.append(line)
-    st.download_button("Download Edited Set File", "\n".join(output_lines), "TraderIQ_ManualEdit.set")
+    new_setfile_text = "\n".join(output_lines)
+    st.markdown("### Download Edited Set File")
+    st.markdown(download_link(new_setfile_text, "TraderIQ_ManualEdit.set", "📥 Click here to download"), unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("TraderIQ: Upload both files, analyze, optimize, and download your improved set file for MT5. For custom rules, just ask!")
+st.caption("TraderIQ: Upload backtest CSV/report and EA set files to analyze, optimize, and export improved MT5 settings.")
+
