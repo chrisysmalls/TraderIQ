@@ -3,6 +3,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import re
 import numpy as np
+from PIL import Image
+
+# --- Show your logo at the top ---
+logo = Image.open("/mnt/data/TradeIQ.png")
+st.image(logo, width=150)
 
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="centered", page_icon="🧠")
 
