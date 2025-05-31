@@ -13,7 +13,7 @@ import streamlit.components.v1 as components
 # --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. CSS Styling for smaller button and dark theme ---
+# --- 2. CSS Styling for dark theme, button, and background watermark ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
@@ -78,6 +78,28 @@ footer {visibility: hidden;}
     color: #6e7caa !important;
     font-style: italic;
 }
+
+/* Terminal watermark background using uploaded image */
+.main .block-container {
+    position: relative;
+    z-index: 1;
+}
+.main .block-container::before {
+    content: "";
+    position: fixed;
+    top: 80px;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-image: url("/mnt/data/terminal.png");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: 60vw;
+    opacity: 0.05;
+    z-index: 0;
+    pointer-events: none;
+    filter: grayscale(80%) brightness(60%);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,9 +137,7 @@ with col2:
             Start by uploading files in the sidebar to the left!
         """)
 
-# --- 4. Rest of your helper functions and main app logic ---
-
-# --- Helper functions ---
+# --- 4. Helper functions ---
 def clamp(value, min_val, max_val):
     return max(min_val, min(max_val, value))
 
@@ -230,20 +250,29 @@ def parse_set_file(file):
 
 def generate_equity_curve_plot(profits_series):
     mpl.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(3, 1.5))  # Half size as requested
+    fig, ax = plt.subplots(figsize=(6, 3))  # moderate size for clarity
+    
     equity = profits_series.cumsum()
-    ax.plot(equity, color='#00f0ff', linewidth=2, label='Equity Curve')
-    ax.fill_between(equity.index, equity, equity.cummax(), color='#004466', alpha=0.5, label='Drawdown')
-    ax.set_title("Equity Curve with Drawdown", color='#68c0ff')
-    ax.set_xlabel("Trade Number", color='#68c0ff')
-    ax.set_ylabel("Cumulative Profit", color='#68c0ff')
-    ax.tick_params(colors='#68c0ff')
-    ax.legend(facecolor='#0f111a', edgecolor='#68c0ff', labelcolor='#68c0ff')
+    trades_count = len(equity)
+    
+    ax.plot(equity.index, equity.values, color='#00f0ff', linewidth=1.5, label='Equity Curve')
+    ax.fill_between(equity.index, equity.values, equity.cummax(), color='#004466', alpha=0.3, label='Drawdown')
+    
+    ax.set_title("Equity Curve with Drawdown", color='#68c0ff', fontsize=14)
+    ax.set_xlabel("Trade Number", color='#68c0ff', fontsize=12)
+    ax.set_ylabel("Cumulative Profit", color='#68c0ff', fontsize=12)
+    
+    ax.tick_params(colors='#68c0ff', labelsize=10)
+    ax.legend(facecolor='#0f111a', edgecolor='#68c0ff', labelcolor='#68c0ff', fontsize=10)
     ax.grid(True, color='#1a2a59')
+    
+    # Set x limits to full range with small margins
+    ax.set_xlim(0, trades_count if trades_count > 0 else 1)
+    
     plt.tight_layout()
     return fig
 
-# --- Main app logic variables ---
+# --- Main app logic variables and parsing ---
 editable_params = {}
 full_output_lines = []
 optimized_params = {}
@@ -251,8 +280,7 @@ metrics = {}
 set_file_loaded = False
 df = None
 
-# --- Parse set file ---
-if uploaded_set:
+if uploaded_set := st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"]):
     try:
         sections, full_output_lines = parse_set_file(uploaded_set)
         set_file_loaded = True
@@ -269,8 +297,7 @@ if set_file_loaded:
                 key, val = line.split('=', 1)
                 editable_params[key.strip()] = val.split('||')[0].strip()
 
-# --- Parse CSV or report ---
-if uploaded_csv:
+if uploaded_csv := st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"]):
     try:
         uploaded_csv.seek(0)
         df = pd.read_csv(uploaded_csv)
@@ -299,12 +326,10 @@ if uploaded_csv:
         fig = generate_equity_curve_plot(profits)
         st.pyplot(fig)
 
-# --- Show analyze button only if both files uploaded ---
 if uploaded_csv is not None and uploaded_set is not None:
     if st.sidebar.button("🔍 Analyze & Optimize Settings Automatically"):
         st.session_state.optimize_clicked = True
 
-# --- Run optimization if requested ---
 if st.session_state.get("optimize_clicked", False) and editable_params and metrics:
     with st.spinner("Optimizing your settings..."):
         time.sleep(1)
