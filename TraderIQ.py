@@ -13,15 +13,7 @@ import streamlit.components.v1 as components
 # --- 1. SET PAGE CONFIG FIRST ---
 st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
-# --- 2. Display logo at top (adjust path if needed) ---
-logo_path = "TradeIQ.png"  # Make sure this file is in the same folder as the script
-if os.path.exists(logo_path):
-    logo_img = Image.open(logo_path)
-    st.image(logo_img, width=180)
-else:
-    st.warning("Logo file 'TradeIQ.png' not found in the app folder.")
-
-# --- 3. CSS Styling for smaller button and dark theme ---
+# --- 2. CSS Styling for smaller button and dark theme ---
 st.markdown("""
 <style>
 div.stButton > button:first-child {
@@ -89,8 +81,43 @@ footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# (Helper functions go here - same as before)
+# --- 3. Logo + Info panel side by side ---
+col1, col2 = st.columns([1, 3])
 
+with col1:
+    logo_path = "TradeIQ.png"
+    if os.path.exists(logo_path):
+        logo_img = Image.open(logo_path)
+        st.image(logo_img, width=180)
+    else:
+        st.warning("Logo file 'TradeIQ.png' not found in the app folder.")
+
+with col2:
+    uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
+    uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
+    st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
+
+    if uploaded_csv is None and uploaded_set is None:
+        st.markdown("""
+            # Welcome to TraderIQ 🧠
+            ### Your MT5 Strategy Optimizer & Analyzer
+
+            Upload your MT5 backtest CSV/report and EA .set/.ini files using the sidebar.
+            
+            Once uploaded, you can analyze your backtest performance, optimize parameters automatically, and download improved .set files to boost profit and reduce risk.
+
+            **Features:**
+            - Intelligent automatic parameter tuning
+            - Comprehensive backtest metrics visualization
+            - Easy manual parameter editing
+            - Clean, futuristic UI with rich insights
+
+            Start by uploading files in the sidebar to the left!
+        """)
+
+# --- 4. Rest of your helper functions and main app logic ---
+
+# --- Helper functions ---
 def clamp(value, min_val, max_val):
     return max(min_val, min(max_val, value))
 
@@ -203,7 +230,7 @@ def parse_set_file(file):
 
 def generate_equity_curve_plot(profits_series):
     mpl.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(3, 1.5))  # Reduced size: half width and height
+    fig, ax = plt.subplots(figsize=(3, 1.5))  # Half size as requested
     equity = profits_series.cumsum()
     ax.plot(equity, color='#00f0ff', linewidth=2, label='Equity Curve')
     ax.fill_between(equity.index, equity, equity.cummax(), color='#004466', alpha=0.5, label='Drawdown')
@@ -216,12 +243,7 @@ def generate_equity_curve_plot(profits_series):
     plt.tight_layout()
     return fig
 
-# -- Main UI and logic (uploaders, parse, analyze, optimize) --
-
-uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
-uploaded_set = st.sidebar.file_uploader("Upload EA Set File (.set/.ini)", type=["set", "ini"])
-st.sidebar.caption("Supported CSVs: trade logs or full MT5 reports. Supported EA files: .set or .ini")
-
+# --- Main app logic variables ---
 editable_params = {}
 full_output_lines = []
 optimized_params = {}
@@ -229,6 +251,7 @@ metrics = {}
 set_file_loaded = False
 df = None
 
+# --- Parse set file ---
 if uploaded_set:
     try:
         sections, full_output_lines = parse_set_file(uploaded_set)
@@ -246,6 +269,7 @@ if set_file_loaded:
                 key, val = line.split('=', 1)
                 editable_params[key.strip()] = val.split('||')[0].strip()
 
+# --- Parse CSV or report ---
 if uploaded_csv:
     try:
         uploaded_csv.seek(0)
@@ -275,10 +299,12 @@ if uploaded_csv:
         fig = generate_equity_curve_plot(profits)
         st.pyplot(fig)
 
+# --- Show analyze button only if both files uploaded ---
 if uploaded_csv is not None and uploaded_set is not None:
     if st.sidebar.button("🔍 Analyze & Optimize Settings Automatically"):
         st.session_state.optimize_clicked = True
 
+# --- Run optimization if requested ---
 if st.session_state.get("optimize_clicked", False) and editable_params and metrics:
     with st.spinner("Optimizing your settings..."):
         time.sleep(1)
