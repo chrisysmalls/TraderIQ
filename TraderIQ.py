@@ -42,6 +42,25 @@ def extract_trades_from_mt5_report(file):
     trades_df = pd.read_csv(StringIO("\n".join(table_lines)))
     return trades_df
 
+# --- Helper for .set/.ini parsing and UI ---
+def parse_ini_setfile(file):
+    sections = {}
+    current_section = None
+    output_lines = []
+    content = file.read()
+    if isinstance(content, bytes):
+        content = content.decode("utf-8")
+    lines = content.splitlines()
+    for line in lines:
+        output_lines.append(line)
+        stripped = line.strip()
+        if stripped.startswith('[') and stripped.endswith(']'):
+            current_section = stripped.strip('[]')
+            sections[current_section] = []
+        elif current_section is not None:
+            sections[current_section].append(line)
+    return sections, output_lines
+
 # --- File Uploaders ---
 uploaded_csv = st.file_uploader("Step 1: Upload your MT5 Backtest CSV or Report", type=["csv"])
 uploaded_set = st.file_uploader(
@@ -53,7 +72,6 @@ st.caption("CSV: Either a trade log or a full MT5 report. .set/.ini: Your bot se
 # --- Load and parse CSV, handling both raw and report formats ---
 df = None
 if uploaded_csv:
-    # Try to read as plain trade log first
     try:
         df = pd.read_csv(uploaded_csv)
         if "Profit" not in df.columns:
@@ -73,7 +91,6 @@ if df is not None:
     if not profit_col:
         st.error("Profit column not found. Please upload a standard MT5 results CSV or report with trade table.")
         st.stop()
-    # Ensure 'Profit' is numeric!
     profits = pd.to_numeric(df[profit_col], errors="coerce")
     total_trades = len(profits)
     win_rate = (profits > 0).sum() / total_trades * 100 if total_trades else 0
@@ -103,8 +120,56 @@ if df is not None:
     ax.grid(True)
     st.pyplot(fig)
 
-# --- .set/.ini parameter parsing and download (add this block below for bot parameter editing) ---
-# [Insert your existing .set/.ini parameter code block here if needed.]
+# --- .set/.ini parameter parsing and download ---
+editable_params = {}
+full_output_lines = []
+
+if uploaded_set:
+    sections, full_output_lines = parse_ini_setfile(uploaded_set)
+    st.markdown("### EA Parameters Detected (Edit as Needed)")
+    for section, lines in sections.items():
+        st.markdown(f"**[{section}]**")
+        for line in lines:
+            if line.strip().startswith(";") or '=' not in line:
+                st.write(line)
+                continue
+            # Parse key and value, also try to parse min/max if present
+            key, value = line.split('=', 1)
+            key = key.strip()
+            main_val = value.split('||')[0].strip()
+            if main_val.lower() in ['true', 'false']:
+                val_bool = True if main_val.lower() == "true" else False
+                val = st.checkbox(key, val_bool)
+                editable_params[key] = f"{str(val).lower()}{value[len(main_val):]}"
+            elif re.match(r'^-?\d+(\.\d+)?$', main_val):  # It's a number
+                try:
+                    parts = value.split('||')
+                    min_val = float(parts[2])
+                    max_val = float(parts[3])
+                    val_num = st.number_input(key, value=float(main_val), min_value=min_val, max_value=max_val, step=0.1)
+                    editable_params[key] = f"{val_num}{'||' + '||'.join(parts[1:]) if len(parts)>1 else ''}"
+                except Exception:
+                    val_num = st.number_input(key, value=float(main_val))
+                    editable_params[key] = str(val_num)
+            else:
+                val_str = st.text_input(key, main_val)
+                editable_params[key] = f"{val_str}{value[len(main_val):]}"
+        st.markdown("---")
+
+# --- Download optimized .set/.ini file ---
+if editable_params:
+    st.success("Download your optimized set/ini file for MT5 below:")
+    output_lines = []
+    for line in full_output_lines:
+        if '=' in line and not line.strip().startswith(';'):
+            key = line.split('=',1)[0].strip()
+            if key in editable_params:
+                output_lines.append(f"{key}={editable_params[key]}")
+            else:
+                output_lines.append(line)
+        else:
+            output_lines.append(line)
+    st.download_button("📥 Download Optimized Settings File", "\n".join(output_lines), "TraderIQ_Optimized.set")
 
 st.markdown("---")
-st.caption("TraderIQ: Now supports raw CSVs or full MT5 report files for ultimate flexibility!")
+st.caption("TraderIQ: Now supports raw CSVs or full MT5 report files, plus .set/.ini bot settings with full editing and export!")
