@@ -9,6 +9,9 @@ import base64
 import matplotlib as mpl
 import time
 
+# --- PAGE CONFIG MUST BE FIRST ---
+st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
+
 # --- DARK FUTURISTIC THEME CSS ---
 st.markdown(
     """
@@ -101,9 +104,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="TraderIQ: MT5 Strategy Optimizer", layout="wide", page_icon="🧠")
 
 # --- LOGO ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
