@@ -38,8 +38,15 @@ hr {border: 1px solid #243a78;}
 """, unsafe_allow_html=True)
 
 # --- SIDEBAR: UPLOADS & INSTRUCTIONS ---
-st.sidebar.image("TradeIQ.png", width=160) if os.path.exists("TradeIQ.png") else st.sidebar.write(" ")
 st.sidebar.markdown("## Start Here")
+
+if os.path.exists("TradeIQ.png"):
+    st.sidebar.image("TradeIQ.png", width=160)
+else:
+    st.sidebar.markdown(
+        "<div style='height:120px'></div>", unsafe_allow_html=True
+    )  # just leaves some space for balance
+
 st.sidebar.markdown(
     "🔹 <b>Step 1:</b> <span style='color:#68c0ff'>Upload your EA <b>.set</b> or <b>.ini</b> file.</span>",
     unsafe_allow_html=True)
@@ -51,6 +58,10 @@ st.sidebar.markdown(
 uploaded_report = st.sidebar.file_uploader("Upload Backtest CSV or HTML", type=["csv", "html"])
 
 st.sidebar.caption("Both files required for full optimization. You may preview each step as you upload.")
+
+# --- MAIN TITLE ---
+st.markdown("# TraderIQ 🤖 AI-Powered MT5 Optimizer")
+st.markdown("Upload your backtest CSV or HTML and EA file on the left to begin super-intelligent optimization.")
 
 # --- 1. SETFILE PREVIEW / PARSE ---
 st.markdown("## 1️⃣ Step 1: Preview Your EA Settings")
@@ -388,7 +399,7 @@ Give concise bullet suggestions for further tuning. Only refer to the above para
         except Exception as e:
             gpt_advice = f"(GPT advice failed: {e})"
     else:
-        gpt_advice = "(OpenAI not available—set your API key in your environment to enable AI suggestions.)"
+        gpt_advice = "(AI suggestions are optional. Add your OpenAI API key to unlock GPT-powered tips!)"
     st.info(textwrap.fill(gpt_advice, width=90))
 
     # --- Show Parameter Comparison ---
