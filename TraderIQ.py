@@ -76,15 +76,15 @@ with col1:
         st.warning("Logo `TradeIQ.png` not found.")
 with col2:
     st.markdown("# TraderIQ 🤖 AI-Powered MT5 Optimizer")
-    st.markdown("Upload your backtest CSV and EA `.set`/`.ini` files on the left to begin super-intelligent optimization.")
+    st.markdown("Upload your backtest CSV and EA file on the left to begin super-intelligent optimization.")
 
 # --- 2. FILE UPLOADS ---
-uploaded_csv = st.sidebar.file_uploader("1) Upload MT5 Backtest CSV or Report", type=["csv"])
-uploaded_set = st.sidebar.file_uploader("2) Upload EA `.set` or `.ini` File", type=["set", "ini"])
-st.sidebar.caption("Supported CSV: MT5 trade log or full report. EA file: `.set` or `.ini`.")
+uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
+uploaded_set = st.sidebar.file_uploader("Upload EA", type=["set", "ini"])
+st.sidebar.caption("CSV: MT5 trade log or full report. EA: .set or .ini")
 
 if (uploaded_csv is None) and (uploaded_set is None):
-    st.info("Waiting for both files…\n• Upload backtest CSV/report\n• Upload EA `.set`/`.ini`")
+    st.info("Waiting for both files…\n• Upload backtest CSV/report\n• Upload EA file")
 
 # --- 3. HELPERS ---
 def clamp(val, min_val, max_val):
@@ -406,9 +406,9 @@ if uploaded_csv:
 
 # 4c) Guidance if only one file
 if uploaded_set and not uploaded_csv:
-    st.info("EA `.set` loaded. Please upload backtest CSV to proceed.")
+    st.info("EA file loaded. Please upload backtest CSV to proceed.")
 if uploaded_csv and not uploaded_set:
-    st.info("Backtest CSV loaded. Please upload EA `.set` to proceed.")
+    st.info("Backtest CSV loaded. Please upload EA file to proceed.")
 
 # 4d) Optimize button
 if uploaded_csv and uploaded_set and not st.session_state.get("optimized", False):
