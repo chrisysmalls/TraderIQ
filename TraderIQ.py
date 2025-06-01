@@ -45,7 +45,7 @@ if os.path.exists("TradeIQ.png"):
 else:
     st.sidebar.markdown(
         "<div style='height:120px'></div>", unsafe_allow_html=True
-    )  # just leaves some space for balance
+    )
 
 st.sidebar.markdown(
     "🔹 <b>Step 1:</b> <span style='color:#68c0ff'>Upload your EA <b>.set</b> or <b>.ini</b> file.</span>",
@@ -211,7 +211,6 @@ if uploaded_report:
             df = None
 
     if df is not None and not df.empty:
-        # ---- DISPLAY HTML TABLE ----
         st.success("Extracted 'Deals' table from MT5 report.")
         st.markdown("""
         <style>
@@ -223,25 +222,33 @@ if uploaded_report:
         html_table = df.to_html(classes="scroll-table", index=False, border=0)
         st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
 
-        # --- Always let user pick the profit/result column, preselecting if likely ---
+        # --- Always let user pick the profit/result column, with smart default ---
+        numeric_cols = [col for col in df.columns if pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors='coerce').notna().sum() > 0]
         default_profit_col = None
-        for col in df.columns:
-            if "profit" in col.lower() or "pnl" in col.lower() or "result" in col.lower():
-                default_profit_col = col
+        priority_names = ["profit", "pnl", "result"]
+        for col in numeric_cols:
+            for name in priority_names:
+                if name in col.lower():
+                    default_profit_col = col
+                    break
+            if default_profit_col:
                 break
+        if not default_profit_col and numeric_cols:
+            default_profit_col = numeric_cols[0]
+        elif not default_profit_col:
+            default_profit_col = df.columns[0]
+
         profit_col = st.selectbox(
             "Select the profit/result column for metrics calculation:",
             options=list(df.columns),
             index=list(df.columns).index(default_profit_col) if default_profit_col in df.columns else 0
         )
+
         profits_raw = df[profit_col]
-        if profits_raw.dtype == "O":
-            profits = pd.to_numeric(profits_raw.astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce").dropna()
-        else:
-            profits = profits_raw.dropna()
+        profits = pd.to_numeric(profits_raw.astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce").dropna()
 
         if profits.empty:
-            st.error("The selected column does not contain any usable numbers for profit calculation. Try a different column.")
+            st.warning("⚠️ The selected column does not contain usable numbers for profit calculation. Please try another column above.")
         else:
             metrics = calculate_advanced_metrics(profits)
             st.subheader("📊 Backtest Metrics")
@@ -259,13 +266,6 @@ if uploaded_report:
             plt.grid(True, color="#1f2e5e")
             plt.tight_layout()
             st.pyplot(fig)
-        # Optional: keep the CSV download as a convenience
-        st.download_button(
-            label="Download Deals Table as CSV",
-            data=df.to_csv(index=False).encode("utf-8"),
-            file_name="MT5_Deals_Table.csv",
-            mime="text/csv"
-        )
 else:
     st.info("Upload your MT5 backtest HTML/CSV in the sidebar.")
 
@@ -288,7 +288,6 @@ def super_intelligent_optimizer(params, metrics):
     streak = metrics["max_consecutive_losses"]
     avg_w = metrics["avg_win"]
     avg_l = abs(metrics["avg_loss"])
-    # Heuristic-based adjustments (examples):
     if "RiskPercent" in optimized:
         try:
             r_old = float(optimized["RiskPercent"])
