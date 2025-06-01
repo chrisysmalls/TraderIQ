@@ -72,7 +72,11 @@ with col2:
     st.markdown("Upload your backtest CSV or HTML and EA file on the left to begin super-intelligent optimization.")
 
 # --- 2. FILE UPLOADS ---
-st.sidebar.markdown("🛈 **For MT5, please upload the HTML report of your backtest.**<br>(Right-click in the Strategy Tester > Save as Report)", unsafe_allow_html=True)
+st.sidebar.markdown(
+    "🛈 <b>For <span style='color:#68c0ff'>MT5</span>, please upload the <span style='color:#68c0ff'>HTML report</span> of your backtest.<br>"
+    "(Right-click in the Strategy Tester → Save as Report)</b>",
+    unsafe_allow_html=True
+)
 uploaded_report = st.sidebar.file_uploader(
     "Upload MT5 Backtest CSV or HTML Report", type=["csv", "html"]
 )
@@ -214,16 +218,17 @@ if uploaded_set:
     # ... your set file logic ...
 
 # 4b) Parse CSV or HTML & show metrics/chart
+df = None
 if uploaded_report:
-    if uploaded_report.name.lower().endswith(".html"):
+    filetype = os.path.splitext(uploaded_report.name)[1].lower()
+    if filetype == ".html":
         html_bytes = uploaded_report.read()
         df = extract_deals_table_from_mt5_html(html_bytes)
         if df is not None and not df.empty:
             st.success("Extracted 'Deals' table from MT5 HTML report.")
-            csv = df.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="Download Cleaned Deals Table as CSV",
-                data=csv,
+                data=df.to_csv(index=False).encode("utf-8"),
                 file_name="MT5_Deals_Table.csv",
                 mime="text/csv"
             )
