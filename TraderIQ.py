@@ -203,8 +203,6 @@ def parse_mt5_report(file):
     table_text = "\n".join(lines[header_idx:end_idx])
     return pd.read_csv(io.StringIO(table_text))
 
-# (Other helpers, optimizer, set parsing, and plotting code go here as before)
-
 # --- 4. MAIN LOGIC ---
 
 editable_params = {}
@@ -213,9 +211,24 @@ metrics = {}
 df = None
 parsed = False
 
-# 4a) Parse `.set` (unchanged)
+# 4a) Parse `.set` (now previews the setfile)
 if uploaded_set:
-    pass  # <--- Fixed indentation! Add your set file logic here if needed
+    try:
+        uploaded_set.seek(0)
+        raw = uploaded_set.read()
+        # Try common encodings
+        for enc in ("utf-16", "utf-16le", "utf-8", "latin-1"):
+            try:
+                content = raw.decode(enc)
+                break
+            except:
+                continue
+        else:
+            content = raw.decode("utf-8", errors="replace")
+        st.subheader("📄 EA Set File Preview")
+        st.code(content, language="ini")
+    except Exception as e:
+        st.error(f"Error reading setfile: {e}")
 
 # 4b) Parse CSV or HTML & show metrics/chart
 df = None
@@ -272,8 +285,6 @@ if uploaded_report:
         plt.grid(True, color="#1f2e5e")
         plt.tight_layout()
         st.pyplot(fig)
-
-# (rest of your optimization, set file, and download logic stays as it is)
 
 st.markdown("---")
 st.caption("TraderIQ: AI-Driven MT5 Strategy Optimizer. Upload backtest CSV/HTML and EA `.set`/`.ini` to get started.")
