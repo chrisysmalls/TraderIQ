@@ -8,7 +8,13 @@ import os
 import time
 from PIL import Image
 import textwrap
-import openai  # pip install openai
+
+# Attempt to import OpenAI; if unavailable, skip GPT features
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 
 # --- 1. PAGE CONFIG & THEME ---
 st.set_page_config(
@@ -70,23 +76,21 @@ with col1:
         st.warning("Logo `TradeIQ.png` not found.")
 with col2:
     st.markdown("# TraderIQ 🤖 AI-Powered MT5 Optimizer")
-    st.markdown("Upload your backtest CSV and EA `.set`/`.ini` files on the left to begin the super-intelligent optimization.")
+    st.markdown("Upload your backtest CSV and EA `.set`/`.ini` files on the left to begin super-intelligent optimization.")
 
 # --- 2. FILE UPLOADS ---
 uploaded_csv = st.sidebar.file_uploader("1) Upload MT5 Backtest CSV or Report", type=["csv"])
 uploaded_set = st.sidebar.file_uploader("2) Upload EA `.set` or `.ini` File", type=["set", "ini"])
-st.sidebar.caption("Supported CSV formats: MT5 trade logs or full report.  EA file: `.set` or `.ini`.")
+st.sidebar.caption("Supported CSV: MT5 trade log or full report. EA file: `.set` or `.ini`.")
 
 if (uploaded_csv is None) and (uploaded_set is None):
-    st.info("Waiting for both files…\n- Upload your backtest CSV/report\n- Upload your EA `.set`/`.ini`")
+    st.info("Waiting for both files…\n• Upload backtest CSV/report\n• Upload EA `.set`/`.ini`")
 
-# --- 3. HELPER FUNCTIONS ---
-
+# --- 3. HELPERS ---
 def clamp(val, min_val, max_val):
     return max(min_val, min(max_val, val))
 
 def clean_profit(val):
-    """Clean a profit field string to float."""
     try:
         if pd.isna(val):
             return np.nan
@@ -99,35 +103,30 @@ def clean_profit(val):
     except:
         return np.nan
 
-def calculate_advanced_metrics(profits_series: pd.Series):
-    """Return a dict of deeper metrics from a series of trade profits."""
-    equity = profits_series.cumsum()
-    total_trades = len(profits_series.dropna())
-    wins = profits_series[profits_series > 0]
-    losses = profits_series[profits_series < 0]
-    win_rate = len(wins) / total_trades * 100 if total_trades else 0
-    total_profit = profits_series.sum()
+def calculate_advanced_metrics(profits):
+    equity = profits.cumsum()
+    total_trades = len(profits.dropna())
+    wins = profits[profits > 0]
+    losses = profits[profits < 0]
+    win_rate = (len(wins) / total_trades * 100) if total_trades else 0
+    total_profit = profits.sum()
     avg_win = wins.mean() if not wins.empty else 0.0
     avg_loss = losses.mean() if not losses.empty else 0.0
     profit_factor = (wins.sum() / abs(losses.sum())) if abs(losses.sum()) > 0 else float('inf')
     expectancy = ((len(wins)*avg_win) + (len(losses)*avg_loss)) / total_trades if total_trades else 0
-    sharpe = (profits_series.mean() / profits_series.std() * np.sqrt(252)) if profits_series.std() != 0 else 0
-    # Max Drawdown
+    sharpe = (profits.mean() / profits.std() * np.sqrt(252)) if profits.std() != 0 else 0
     roll_max = equity.cummax()
     drawdowns = equity - roll_max
     max_dd = abs(drawdowns.min()) if not drawdowns.empty else 0.0
-    # Volatility annualized
-    volatility = profits_series.std() * np.sqrt(252) if profits_series.std() != 0 else 0.0
-    # Max consecutive losses
+    volatility = profits.std() * np.sqrt(252) if profits.std() != 0 else 0.0
     streak = 0
     max_consec = 0
-    for p in profits_series:
+    for p in profits:
         if p < 0:
             streak += 1
             max_consec = max(max_consec, streak)
         else:
             streak = 0
-
     return {
         "total_trades": total_trades,
         "win_rate": round(win_rate, 2),
@@ -143,7 +142,6 @@ def calculate_advanced_metrics(profits_series: pd.Series):
     }
 
 def parse_mt5_report(file):
-    """Attempt to extract a trade table from a full MT5 report, then return DataFrame."""
     file.seek(0)
     raw = file.read()
     try:
@@ -157,8 +155,7 @@ def parse_mt5_report(file):
             header_idx = i
             break
     if header_idx is None:
-        raise ValueError("Cannot find table header with 'Profit'.")
-    # find end of trades table
+        raise ValueError("Cannot find `Profit` header.")
     end_idx = None
     for i in range(header_idx+1, len(lines)):
         if lines[i].strip() == "" or any(tok in lines[i] for tok in ["Summary", "Report", "[", "input"]):
@@ -170,7 +167,6 @@ def parse_mt5_report(file):
     return pd.read_csv(io.StringIO(table_text))
 
 def parse_set_file(file):
-    """Parse `.set` or `.ini` exactly, preserving all lines and sections."""
     file.seek(0)
     raw = file.read()
     for enc in ("utf-16", "utf-16le", "utf-8", "latin-1"):
@@ -199,7 +195,6 @@ def parse_set_file(file):
         elif current is not None:
             sections.setdefault(current, []).append(line)
         else:
-            # If no [section], put under default
             current = "Parameters"
             sections.setdefault(current, []).append(line)
     return sections, lines
@@ -220,7 +215,6 @@ def generate_equity_curve_plot(profits):
     return fig
 
 def generate_optimized_setfile_text(full_lines, optimized_params):
-    """Recompose `.set` text by preserving everything except updated values."""
     out = []
     for line in full_lines:
         stripped = line.strip()
@@ -237,16 +231,9 @@ def generate_optimized_setfile_text(full_lines, optimized_params):
     return "\n".join(out)
 
 def super_intelligent_optimizer(params, metrics):
-    """
-    Combine advanced heuristics + GPT-driven suggestions to produce:
-      - optimized_params (dict)
-      - messages (list of text)
-      - gpt_advice (str, natural-language)
-    """
     optimized = params.copy()
     messages = []
 
-    # Unpack key metrics
     dd = metrics["max_drawdown"]
     pf = metrics["profit_factor"]
     wr = metrics["win_rate"]
@@ -257,7 +244,7 @@ def super_intelligent_optimizer(params, metrics):
     avg_w = metrics["avg_win"]
     avg_l = abs(metrics["avg_loss"])
 
-    # 1) Dynamic RiskPercent
+    # 1) Dynamic Risk
     if "RiskPercent" in optimized:
         try:
             r_old = float(optimized["RiskPercent"])
@@ -270,11 +257,11 @@ def super_intelligent_optimizer(params, metrics):
                 rf *= 0.6
             new_r = clamp(r_old * rf, 0.05, r_old)
             optimized["RiskPercent"] = str(round(new_r, 3))
-            messages.append(f"RiskPercent adjusted from {r_old} to {new_r} based on Drawdown & Volatility.")
+            messages.append(f"RiskPercent → {new_r} (based on drawdown/volatility).")
         except:
             pass
 
-    # 2) TakeProfit/StopLoss w/ expectancy + win-rate
+    # 2) TP/SL Adjustment
     if "TakeProfit" in optimized and "StopLoss" in optimized:
         try:
             tp_old = float(optimized["TakeProfit"])
@@ -285,11 +272,11 @@ def super_intelligent_optimizer(params, metrics):
             new_tp = clamp(new_sl * base_rr, 5, 1000)
             optimized["StopLoss"] = str(round(new_sl, 2))
             optimized["TakeProfit"] = str(round(new_tp, 2))
-            messages.append(f"StopLoss set to {new_sl} and TakeProfit to {new_tp} (RR={round(base_rr,2)}).")
+            messages.append(f"StopLoss → {new_sl}, TakeProfit → {new_tp} (RR={round(base_rr,2)}).")
         except:
             pass
 
-    # 3) RSI tuning
+    # 3) RSI Tuning
     if all(k in optimized for k in ["RSIPeriod", "RSIOverbought", "RSIOversold"]):
         try:
             rspi = int(optimized["RSIPeriod"])
@@ -305,11 +292,11 @@ def super_intelligent_optimizer(params, metrics):
             optimized["RSIPeriod"] = str(rspi)
             optimized["RSIOverbought"] = str(ob)
             optimized["RSIOversold"] = str(osv)
-            messages.append(f"RSI tuned: Period={rspi}, Overbought={ob}, Oversold={osv}.")
+            messages.append(f"RSI → Period {rspi}, OB {ob}, OS {osv}.")
         except:
             pass
 
-    # 4) MA noise filter
+    # 4) MA Filter
     if all(k in optimized for k in ["MovingAveragePeriodShort", "MovingAveragePeriodLong"]):
         try:
             sma = int(optimized["MovingAveragePeriodShort"])
@@ -317,53 +304,50 @@ def super_intelligent_optimizer(params, metrics):
             if sr < 0.8:
                 sma = clamp(sma + 5, 5, 50)
                 lma = clamp(lma + 10, sma + 5, 200)
-            else:
-                sma = clamp(sma, 5, 50)
-                lma = clamp(lma, sma + 5, 200)
             optimized["MovingAveragePeriodShort"] = str(sma)
             optimized["MovingAveragePeriodLong"] = str(lma)
-            messages.append(f"MA periods adjusted: Short={sma}, Long={lma}.")
+            messages.append(f"MA → Short {sma}, Long {lma}.")
         except:
             pass
 
-    # 5) GPT-powered natural-language advice:
+    # 5) GPT-Powered Advice (if available)
     gpt_advice = ""
-    api_key = os.getenv("OPENAI_API_KEY", None)
-    if api_key:
-        openai.api_key = api_key
-        # Build a brief prompt summarizing key metrics + current parameters
+    if OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY"):
+        openai.api_key = os.getenv("OPENAI_API_KEY")
         prompt = f"""
-You are an expert MT5 strategy optimizer. 
-The EA's current parameters are:
+You are an MT5 strategy optimization expert.
+Current EA parameters:
 { {k: optimized[k] for k in optimized} }
 
-The backtest metrics are:
-- Total Trades: {metrics['total_trades']}
+Backtest metrics:
+- Trades: {metrics['total_trades']}
 - Win Rate: {metrics['win_rate']}%
 - Total Profit: {metrics['total_profit']}
-- Average Win: {metrics['avg_win']}, Average Loss: {metrics['avg_loss']}
+- Avg Win: {metrics['avg_win']}, Avg Loss: {metrics['avg_loss']}
 - Profit Factor: {metrics['profit_factor']}
 - Expectancy: {metrics['expectancy']}
-- Sharpe Ratio: {metrics['sharpe_ratio']}
+- Sharpe: {metrics['sharpe_ratio']}
 - Max Drawdown: {metrics['max_drawdown']}
-- Annual Volatility: {metrics['volatility_annualized']}
+- Volatility: {metrics['volatility_annualized']}
 - Max Consecutive Losses: {metrics['max_consecutive_losses']}
 
-Based on these, recommend any further parameter adjustments in a concise bullet list. Only recommend parameters present above.
+Give concise bullet suggestions for further tuning. Only refer to the above parameters.
 """
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "system", "content": "You are a top-tier MT5 optimization AI."},
-                          {"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "You are a world-class MT5 optimizer AI."},
+                    {"role": "user", "content": prompt}
+                ],
                 temperature=0.7,
-                max_tokens=300,
+                max_tokens=300
             )
             gpt_advice = response.choices[0].message.content.strip()
         except Exception as e:
             gpt_advice = f"(GPT advice failed: {e})"
     else:
-        gpt_advice = "(OpenAI API key not set; skipping GPT-powered advice.)"
+        gpt_advice = "(OpenAI not available—skipping GPT-powered advice.)"
 
     return optimized, messages, gpt_advice
 
@@ -375,7 +359,7 @@ metrics = {}
 df = None
 parsed = False
 
-# 4a) Parse `.set` if uploaded
+# 4a) Parse `.set`
 if uploaded_set:
     try:
         sections, full_output_lines = parse_set_file(uploaded_set)
@@ -387,21 +371,21 @@ if uploaded_set:
                     editable_params[k.strip()] = v.split("||")[0].strip()
         parsed = True
     except Exception as e:
-        st.error(f"Error parsing `.set` file: {e}")
+        st.error(f"Error parsing `.set`: {e}")
 
-# 4b) Parse CSV & show metrics/plot
+# 4b) Parse CSV & show metrics/chart
 if uploaded_csv:
     try:
         uploaded_csv.seek(0)
         df = pd.read_csv(uploaded_csv)
         if "Profit" not in df.columns:
-            raise Exception("No `Profit` column. Attempting report parsing…")
+            raise Exception("No `Profit` column—attempting report parsing.")
     except:
         try:
             df = parse_mt5_report(uploaded_csv)
             st.success("Extracted trades from MT5 report.")
         except Exception as e:
-            st.error(f"CSV/report parsing error: {e}")
+            st.error(f"Error parsing CSV/report: {e}")
             df = None
 
     if df is not None:
@@ -420,23 +404,23 @@ if uploaded_csv:
         fig = generate_equity_curve_plot(profits)
         st.pyplot(fig)
 
-# 4c) Show guidance if only one file
+# 4c) Guidance if only one file
 if uploaded_set and not uploaded_csv:
-    st.info("EA settings loaded. Please upload backtest CSV to proceed.")
+    st.info("EA `.set` loaded. Please upload backtest CSV to proceed.")
 if uploaded_csv and not uploaded_set:
     st.info("Backtest CSV loaded. Please upload EA `.set` to proceed.")
 
-# 4d) Optimize button (only when both present)
+# 4d) Optimize button
 if uploaded_csv and uploaded_set and not st.session_state.get("optimized", False):
     if st.sidebar.button("🤖 Run AI-Powered Optimization"):
         st.session_state.optimized = True
 
-# 4e) When optimization triggered:
+# 4e) Show optimization results
 if st.session_state.get("optimized", False) and editable_params and metrics:
     st.markdown("---")
     st.header("🚀 AI-Powered Optimization Results")
 
-    with st.spinner("Thinking…"):
+    with st.spinner("Running super-intelligent optimizer..."):
         time.sleep(1)
         opt_params, heuristic_msgs, gpt_msgs = super_intelligent_optimizer(editable_params, metrics)
 
@@ -467,7 +451,7 @@ if st.session_state.get("optimized", False) and editable_params and metrics:
         mime="text/plain"
     )
 
-# 4f) Manual editing fallback (if optimization not done)
+# 4f) Manual editing fallback
 if editable_params and not st.session_state.get("optimized", False):
     st.subheader("✏️ Manual Parameter Editor")
     for k, v in editable_params.items():
@@ -483,16 +467,14 @@ if editable_params and not st.session_state.get("optimized", False):
                 manual_lines.append(line)
         else:
             manual_lines.append(line)
-
     manual_text = "\n".join(manual_lines)
-    st.markdown("### 📥 Download Manually Edited `.set` File")
+    st.markdown("### 📥 Download Edited `.set` File")
     st.download_button(
-        label="Download Currently Edited .set File",
+        label="Download Manually Edited `.set` File",
         data=manual_text,
         file_name="TraderIQ_ManualEdit.set",
         mime="text/plain"
     )
 
 st.markdown("---")
-st.caption("TraderIQ: AI-Driven MT5 Strategy Optimizer. Upload your backtest and EA files to unleash super-intelligent tuning!")
-
+st.caption("TraderIQ: AI-Driven MT5 Strategy Optimizer. Upload backtest CSV/report and EA `.set`/`.ini` to get started.")
