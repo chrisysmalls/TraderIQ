@@ -5,3 +5,4 @@ pillow
 openai
 beautifulsoup4
 numpy
+textwrap
