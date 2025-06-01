@@ -43,7 +43,7 @@ with logo_col:
     if os.path.exists("TradeIQ.png"):
         st.image("TradeIQ.png", width=130)
     else:
-        st.write("")  # No logo fallback
+        st.write("")
 with title_col:
     st.markdown("# TraderIQ 🤖 AI-Powered MT5 Optimizer")
     st.caption("Upload your backtest CSV/HTML and EA file on the left to begin.")
@@ -133,9 +133,9 @@ if uploaded_report:
         if not tables:
             st.warning("❗️ No tables found in HTML report.")
         else:
-            st.info(f"Found {len(tables)} table(s) in your HTML report. Previewing them all below.")
-            table_options = []
+            # Only keep tables with 3+ columns (likely real trade tables)
             dfs = []
+            table_options = []
             for idx, table in enumerate(tables):
                 rows = table.find_all("tr")
                 if not rows:
@@ -146,20 +146,22 @@ if uploaded_report:
                     tds = row.find_all("td")
                     if len(tds) == len(headers):
                         data.append([td.get_text(strip=True) for td in tds])
-                if data:
+                # Skip empty, single-col, or "report info" tables
+                if data and len(headers) >= 3:
                     df_try = pd.DataFrame(data, columns=headers)
                     dfs.append(df_try)
                     table_label = f"Table {idx+1}: {headers}"
                     table_options.append(table_label)
-            if dfs:
+            if not dfs:
+                st.warning("No valid trade tables found in your report.")
+            else:
+                st.info(f"Found {len(dfs)} valid table(s) in your HTML report.")
                 selected_idx = st.selectbox(
                     "Select which table looks like your Deals/trade history table:",
                     range(len(dfs)), format_func=lambda i: table_options[i])
                 df = dfs[selected_idx]
-                st.subheader(f"Preview of selected table (first 5 rows):")
+                st.subheader("Preview of selected table (first 5 rows):")
                 st.write(df.head())
-            else:
-                st.warning("Tables found, but none with data rows matching the header.")
     else:
         uploaded_report.seek(0)
         try:
@@ -241,12 +243,15 @@ if uploaded_report:
                 st.subheader("📊 Backtest Metrics")
                 st.write(metrics)
 
-                # --- NEW: High-contrast, deep blue equity curve ---
+                # --- High-contrast, deep blue equity curve ---
                 st.subheader("📈 Equity Curve")
                 fig, ax = plt.subplots(figsize=(6, 3), facecolor="#0b0e1d")
                 eq = profits.cumsum()
-                ax.plot(eq.index, eq.values, color="#1677ff", linewidth=2.5, label="Equity Curve", zorder=3)  # deep blue
-                ax.fill_between(eq.index, eq.values, eq.cummax(), color="#0af5ba", alpha=0.18, label="Drawdown", zorder=2) # teal fill
+                if len(eq) > 1:
+                    ax.plot(eq.index, eq.values, color="#1853a0", linewidth=3, label="Equity Curve", zorder=3)
+                    ax.fill_between(eq.index, eq.values, eq.cummax(), color="#22e6c5", alpha=0.25, label="Drawdown", zorder=2)
+                else:
+                    ax.hlines(eq.values[0], eq.index[0], eq.index[-1], color="#1853a0", linewidth=3, label="Equity Curve", zorder=3)
                 ax.set_facecolor("#0b0e1d")
                 ax.set_title("Equity Curve with Drawdown", color="#68c0ff", fontsize=14)
                 ax.set_xlabel("Trade #", color="#68c0ff")
