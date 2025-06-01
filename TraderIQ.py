@@ -194,18 +194,8 @@ def extract_deals_table_from_mt5_html(html_bytes):
     df = pd.DataFrame(data, columns=header)
     # Try to convert any possible number columns to float
     for col in df.columns:
-        df[col] = pd.to_numeric(df[col].str.replace(",", "").str.replace(" ", ""), errors='ignore')
+        df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors='ignore')
     return df
-
-def guess_profit_col(df):
-    # Find the most likely profit column
-    for col in df.columns:
-        if "profit" in col.lower() or "pnl" in col.lower() or "result" in col.lower():
-            return col
-    # Otherwise, just return the first numeric column
-    for col in df.select_dtypes(include=[np.number]).columns:
-        return col
-    return None
 
 if uploaded_report:
     filetype = os.path.splitext(uploaded_report.name)[1].lower()
@@ -233,20 +223,25 @@ if uploaded_report:
         html_table = df.to_html(classes="scroll-table", index=False, border=0)
         st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
 
-        # ---- PROFIT COLUMN DETECTION ----
-        profit_col = guess_profit_col(df)
-        if not profit_col:
-            profit_col = st.selectbox(
-                "Select the profit column for metrics calculation:",
-                options=list(df.columns)
-            )
+        # --- Always let user pick the profit/result column, preselecting if likely ---
+        default_profit_col = None
+        for col in df.columns:
+            if "profit" in col.lower() or "pnl" in col.lower() or "result" in col.lower():
+                default_profit_col = col
+                break
+        profit_col = st.selectbox(
+            "Select the profit/result column for metrics calculation:",
+            options=list(df.columns),
+            index=list(df.columns).index(default_profit_col) if default_profit_col in df.columns else 0
+        )
+        profits_raw = df[profit_col]
+        if profits_raw.dtype == "O":
+            profits = pd.to_numeric(profits_raw.astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce").dropna()
         else:
-            st.caption(f"Using '{profit_col}' as profit column.")
+            profits = profits_raw.dropna()
 
-        # Clean and convert profit column if needed
-        profits = pd.to_numeric(df[profit_col].replace(",", "", regex=True), errors="coerce").dropna()
         if profits.empty:
-            st.error("The selected column does not contain any usable numbers for profit calculation.")
+            st.error("The selected column does not contain any usable numbers for profit calculation. Try a different column.")
         else:
             metrics = calculate_advanced_metrics(profits)
             st.subheader("📊 Backtest Metrics")
