@@ -171,15 +171,12 @@ def extract_deals_table_from_mt5_html(html_bytes):
     soup = BeautifulSoup(html_bytes, "html.parser")
     tables = soup.find_all("table")
     deals_table = None
-
     for table in tables:
         if table.find(string="Deals"):
             deals_table = table
             break
-
     if deals_table is None:
         return None
-
     rows = deals_table.find_all("tr")
     for i, row in enumerate(rows):
         ths = row.find_all("th")
@@ -188,51 +185,33 @@ def extract_deals_table_from_mt5_html(html_bytes):
             break
     else:
         return None
-
     header = [th.get_text(strip=True) for th in rows[header_row].find_all(["th", "td"])]
     data = []
     for row in rows[header_row + 1:]:
         tds = row.find_all("td")
         if len(tds) == len(header):
             data.append([td.get_text(strip=True).replace('\xa0', ' ') for td in tds])
-
     df = pd.DataFrame(data, columns=header)
-    if "Balance" in df.columns:
-        df["Balance"] = df["Balance"].astype(str).str.replace(" ", "").str.replace(",", "").astype(float, errors="ignore")
-    if "Profit" in df.columns:
-        df["Profit"] = df["Profit"].astype(str).str.replace(" ", "").str.replace(",", "").astype(float, errors="ignore")
+    # Try to convert any possible number columns to float
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col].str.replace(",", "").str.replace(" ", ""), errors='ignore')
     return df
+
+def guess_profit_col(df):
+    # Find the most likely profit column
+    for col in df.columns:
+        if "profit" in col.lower() or "pnl" in col.lower() or "result" in col.lower():
+            return col
+    # Otherwise, just return the first numeric column
+    for col in df.select_dtypes(include=[np.number]).columns:
+        return col
+    return None
 
 if uploaded_report:
     filetype = os.path.splitext(uploaded_report.name)[1].lower()
     if filetype == ".html":
         html_bytes = uploaded_report.read()
         df = extract_deals_table_from_mt5_html(html_bytes)
-        if df is not None and not df.empty:
-            st.success("Extracted 'Deals' table from MT5 HTML report.")
-
-            # --- Show interactive, scrollable HTML table ---
-            st.markdown("""
-            <style>
-            .scroll-table {max-height: 360px; overflow-y: auto;}
-            .scroll-table table {background: #141f35 !important; color: #dff5ff;}
-            .scroll-table th, .scroll-table td {padding: 7px 10px;}
-            </style>
-            """, unsafe_allow_html=True)
-
-            html_table = df.to_html(classes="scroll-table", index=False, border=0)
-            st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
-
-            # (Optional) CSV download still available
-            st.download_button(
-                label="Download Cleaned Deals Table as CSV",
-                data=df.to_csv(index=False).encode("utf-8"),
-                file_name="MT5_Deals_Table.csv",
-                mime="text/csv"
-            )
-        else:
-            st.error("Could not find a valid 'Deals' table in the HTML report.")
-            df = None
     else:
         uploaded_report.seek(0)
         try:
@@ -241,30 +220,57 @@ if uploaded_report:
             st.error("Error parsing CSV report.")
             df = None
 
-    # Only show metrics/equity if df loaded
     if df is not None and not df.empty:
-        profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
-        if not profit_col:
-            st.error("`Profit` column not found.")
-            st.stop()
-        profits = df[profit_col].apply(clean_profit).dropna()
-        metrics = calculate_advanced_metrics(profits)
-        st.subheader("📊 Backtest Metrics")
-        st.write(metrics)
+        # ---- DISPLAY HTML TABLE ----
+        st.success("Extracted 'Deals' table from MT5 report.")
+        st.markdown("""
+        <style>
+        .scroll-table {max-height: 360px; overflow-y: auto;}
+        .scroll-table table {background: #141f35 !important; color: #dff5ff;}
+        .scroll-table th, .scroll-table td {padding: 7px 10px;}
+        </style>
+        """, unsafe_allow_html=True)
+        html_table = df.to_html(classes="scroll-table", index=False, border=0)
+        st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
 
-        st.subheader("📈 Equity Curve")
-        fig = plt.figure(figsize=(6, 3))
-        eq = profits.cumsum()
-        plt.plot(eq.index, eq.values, color="#00ffff", linewidth=2, label="Equity Curve")
-        plt.fill_between(eq.index, eq.values, eq.cummax(), color="#004466", alpha=0.4, label="Drawdown")
-        plt.title("Equity Curve with Drawdown", color="#68c0ff", fontsize=14)
-        plt.xlabel("Trade #", color="#68c0ff")
-        plt.ylabel("Cum. Profit", color="#68c0ff")
-        plt.tick_params(colors="#68c0ff")
-        plt.legend(facecolor="#0b0e1d", edgecolor="#68c0ff", labelcolor="#68c0ff")
-        plt.grid(True, color="#1f2e5e")
-        plt.tight_layout()
-        st.pyplot(fig)
+        # ---- PROFIT COLUMN DETECTION ----
+        profit_col = guess_profit_col(df)
+        if not profit_col:
+            profit_col = st.selectbox(
+                "Select the profit column for metrics calculation:",
+                options=list(df.columns)
+            )
+        else:
+            st.caption(f"Using '{profit_col}' as profit column.")
+
+        # Clean and convert profit column if needed
+        profits = pd.to_numeric(df[profit_col].replace(",", "", regex=True), errors="coerce").dropna()
+        if profits.empty:
+            st.error("The selected column does not contain any usable numbers for profit calculation.")
+        else:
+            metrics = calculate_advanced_metrics(profits)
+            st.subheader("📊 Backtest Metrics")
+            st.write(metrics)
+            st.subheader("📈 Equity Curve")
+            fig = plt.figure(figsize=(6, 3))
+            eq = profits.cumsum()
+            plt.plot(eq.index, eq.values, color="#00ffff", linewidth=2, label="Equity Curve")
+            plt.fill_between(eq.index, eq.values, eq.cummax(), color="#004466", alpha=0.4, label="Drawdown")
+            plt.title("Equity Curve with Drawdown", color="#68c0ff", fontsize=14)
+            plt.xlabel("Trade #", color="#68c0ff")
+            plt.ylabel("Cum. Profit", color="#68c0ff")
+            plt.tick_params(colors="#68c0ff")
+            plt.legend(facecolor="#0b0e1d", edgecolor="#68c0ff", labelcolor="#68c0ff")
+            plt.grid(True, color="#1f2e5e")
+            plt.tight_layout()
+            st.pyplot(fig)
+        # Optional: keep the CSV download as a convenience
+        st.download_button(
+            label="Download Deals Table as CSV",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name="MT5_Deals_Table.csv",
+            mime="text/csv"
+        )
 else:
     st.info("Upload your MT5 backtest HTML/CSV in the sidebar.")
 
