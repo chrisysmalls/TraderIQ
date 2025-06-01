@@ -211,19 +211,28 @@ if uploaded_report:
             df = None
 
     if df is not None and not df.empty:
-        st.success("Extracted 'Deals' table from MT5 report.")
-        st.markdown("""
-        <style>
-        .scroll-table {max-height: 360px; overflow-y: auto;}
-        .scroll-table table {background: #141f35 !important; color: #dff5ff;}
-        .scroll-table th, .scroll-table td {padding: 7px 10px;}
-        </style>
-        """, unsafe_allow_html=True)
-        html_table = df.to_html(classes="scroll-table", index=False, border=0)
-        st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
+        # --- Always show the table (styled, fallback to interactive) ---
+        try:
+            html_table = df.to_html(classes="scroll-table", index=False, border=0)
+            st.markdown("""
+            <style>
+            .scroll-table {max-height: 360px; overflow-y: auto;}
+            .scroll-table table {background: #141f35 !important; color: #dff5ff;}
+            .scroll-table th, .scroll-table td {padding: 7px 10px;}
+            </style>
+            """, unsafe_allow_html=True)
+            st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
+        except Exception:
+            st.dataframe(df)
 
-        # --- Always let user pick the profit/result column, with smart default ---
-        numeric_cols = [col for col in df.columns if pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors='coerce').notna().sum() > 0]
+        # --- Only show numeric columns for dropdown (and handle no-numeric edge case) ---
+        numeric_cols = []
+        for col in df.columns:
+            col_numeric = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce")
+            if col_numeric.notna().sum() > 0:
+                numeric_cols.append(col)
+
+        # Try to auto-select best numeric column
         default_profit_col = None
         priority_names = ["profit", "pnl", "result"]
         for col in numeric_cols:
@@ -235,37 +244,44 @@ if uploaded_report:
                 break
         if not default_profit_col and numeric_cols:
             default_profit_col = numeric_cols[0]
-        elif not default_profit_col:
-            default_profit_col = df.columns[0]
 
-        profit_col = st.selectbox(
-            "Select the profit/result column for metrics calculation:",
-            options=list(df.columns),
-            index=list(df.columns).index(default_profit_col) if default_profit_col in df.columns else 0
-        )
-
-        profits_raw = df[profit_col]
-        profits = pd.to_numeric(profits_raw.astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce").dropna()
-
-        if profits.empty:
-            st.warning("⚠️ The selected column does not contain usable numbers for profit calculation. Please try another column above.")
+        # Dropdown for valid columns
+        if numeric_cols:
+            profit_col = st.selectbox(
+                "Select the profit/result column for metrics calculation:",
+                options=numeric_cols,
+                index=numeric_cols.index(default_profit_col) if default_profit_col in numeric_cols else 0
+            )
         else:
-            metrics = calculate_advanced_metrics(profits)
-            st.subheader("📊 Backtest Metrics")
-            st.write(metrics)
-            st.subheader("📈 Equity Curve")
-            fig = plt.figure(figsize=(6, 3))
-            eq = profits.cumsum()
-            plt.plot(eq.index, eq.values, color="#00ffff", linewidth=2, label="Equity Curve")
-            plt.fill_between(eq.index, eq.values, eq.cummax(), color="#004466", alpha=0.4, label="Drawdown")
-            plt.title("Equity Curve with Drawdown", color="#68c0ff", fontsize=14)
-            plt.xlabel("Trade #", color="#68c0ff")
-            plt.ylabel("Cum. Profit", color="#68c0ff")
-            plt.tick_params(colors="#68c0ff")
-            plt.legend(facecolor="#0b0e1d", edgecolor="#68c0ff", labelcolor="#68c0ff")
-            plt.grid(True, color="#1f2e5e")
-            plt.tight_layout()
-            st.pyplot(fig)
+            profit_col = st.selectbox(
+                "No numeric columns detected. Select any column to inspect manually:",
+                options=list(df.columns)
+            )
+            st.warning("No numeric columns found. Please check your report format.")
+
+        # Only run metrics if a numeric column is available
+        if numeric_cols:
+            profits_raw = df[profit_col]
+            profits = pd.to_numeric(profits_raw.astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce").dropna()
+            if profits.empty:
+                st.warning("⚠️ The selected column does not contain usable numbers for profit calculation. Please try another column above.")
+            else:
+                metrics = calculate_advanced_metrics(profits)
+                st.subheader("📊 Backtest Metrics")
+                st.write(metrics)
+                st.subheader("📈 Equity Curve")
+                fig = plt.figure(figsize=(6, 3))
+                eq = profits.cumsum()
+                plt.plot(eq.index, eq.values, color="#00ffff", linewidth=2, label="Equity Curve")
+                plt.fill_between(eq.index, eq.values, eq.cummax(), color="#004466", alpha=0.4, label="Drawdown")
+                plt.title("Equity Curve with Drawdown", color="#68c0ff", fontsize=14)
+                plt.xlabel("Trade #", color="#68c0ff")
+                plt.ylabel("Cum. Profit", color="#68c0ff")
+                plt.tick_params(colors="#68c0ff")
+                plt.legend(facecolor="#0b0e1d", edgecolor="#68c0ff", labelcolor="#68c0ff")
+                plt.grid(True, color="#1f2e5e")
+                plt.tight_layout()
+                st.pyplot(fig)
 else:
     st.info("Upload your MT5 backtest HTML/CSV in the sidebar.")
 
