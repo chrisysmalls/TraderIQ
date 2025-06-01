@@ -37,6 +37,18 @@ hr {border: 1px solid #243a78;}
 </style>
 """, unsafe_allow_html=True)
 
+# Helper function to deduplicate DataFrame columns
+def deduplicate_columns(df):
+    cols = pd.Series(df.columns)
+    for dup in cols[cols.duplicated()].unique():
+        dup_idx = cols[cols == dup].index.tolist()
+        for i, idx in enumerate(dup_idx):
+            if i == 0:
+                continue  # Keep first as is
+            cols[idx] = f"{dup}_{i}"
+    df.columns = cols
+    return df
+
 # --- LOGO ROW (top of page) ---
 logo_col, title_col = st.columns([1, 6])
 with logo_col:
@@ -149,6 +161,7 @@ if uploaded_report:
                 # Skip empty, single-col, or "report info" tables
                 if data and len(headers) >= 3:
                     df_try = pd.DataFrame(data, columns=headers)
+                    df_try = deduplicate_columns(df_try)  # Deduplicate columns here
                     dfs.append(df_try)
                     table_label = f"Table {idx+1}: {headers}"
                     table_options.append(table_label)
@@ -166,6 +179,7 @@ if uploaded_report:
         uploaded_report.seek(0)
         try:
             df = pd.read_csv(uploaded_report)
+            df = deduplicate_columns(df)  # Deduplicate columns here too
             st.write(df.head())
         except Exception as e:
             st.error("Error parsing CSV report: " + str(e))
@@ -243,7 +257,7 @@ if uploaded_report:
                 st.subheader("📊 Backtest Metrics")
                 st.write(metrics)
 
-                # --- High-contrast, deep blue equity curve ---
+                # Equity curve with clear deep blue and teal drawdown
                 st.subheader("📈 Equity Curve")
                 fig, ax = plt.subplots(figsize=(6, 3), facecolor="#0b0e1d")
                 eq = profits.cumsum()
