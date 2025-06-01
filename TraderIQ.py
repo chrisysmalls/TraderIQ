@@ -410,9 +410,9 @@ if uploaded_set and not uploaded_csv:
 if uploaded_csv and not uploaded_set:
     st.info("Backtest CSV loaded. Please upload EA file to proceed.")
 
-# 4d) Optimize button
+# 4d) Optimize Now button in sidebar
 if uploaded_csv and uploaded_set and not st.session_state.get("optimized", False):
-    if st.sidebar.button("🤖 Run AI-Powered Optimization"):
+    if st.sidebar.button("Optimize Now"):
         st.session_state.optimized = True
 
 # 4e) Show optimization results
