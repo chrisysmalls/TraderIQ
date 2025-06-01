@@ -8,6 +8,7 @@ import time
 import textwrap
 from PIL import Image
 from bs4 import BeautifulSoup
+import re
 
 # --- OpenAI import (for GPT suggestions) ---
 try:
@@ -167,18 +168,16 @@ def calculate_advanced_metrics(profits):
         "max_consecutive_losses": max_consec
     }
 
-# ---- PATCHED: Robust MT5 HTML table extractor ----
 def extract_deals_table_from_mt5_html(html_bytes):
     soup = BeautifulSoup(html_bytes, "html.parser")
     tables = soup.find_all("table")
-    # Find the table with headers like "Profit", "P/L", "Result", "PNL"
     profit_like_names = ["profit", "p/l", "result", "pnl"]
     for table in tables:
         headers = []
         first_row = table.find("tr")
         if first_row:
-            headers = [th.get_text(strip=True).lower() for th in first_row.find_all(["th", "td"])]
-        if any(any(pn in h for pn in profit_like_names) for h in headers):
+            headers = [th.get_text(strip=True) for th in first_row.find_all(["th", "td"])]
+        if any(any(pn in h.lower() for pn in profit_like_names) for h in headers):
             # Found likely deals/trades table!
             rows = table.find_all("tr")
             data = []
@@ -187,12 +186,24 @@ def extract_deals_table_from_mt5_html(html_bytes):
                 if len(tds) == len(headers):
                     data.append([td.get_text(strip=True).replace('\xa0', ' ') for td in tds])
             if data:
-                df = pd.DataFrame(data, columns=[h.title() for h in headers])
-                # Try to convert all columns to numeric where possible
-                for col in df.columns:
-                    df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors='ignore')
+                df = pd.DataFrame(data, columns=headers)
                 return df
-    return None  # No suitable table found
+    return None
+
+def to_float(val):
+    if isinstance(val, str):
+        # Remove all but numbers, minus, dot, comma
+        cleaned = re.sub(r'[^\d\-,\.]', '', val)
+        try:
+            if ',' in cleaned and '.' not in cleaned:
+                cleaned = cleaned.replace(',', '.')
+            return float(cleaned)
+        except:
+            return np.nan
+    try:
+        return float(val)
+    except:
+        return np.nan
 
 if uploaded_report:
     filetype = os.path.splitext(uploaded_report.name)[1].lower()
@@ -208,28 +219,21 @@ if uploaded_report:
             df = None
 
     if df is not None and not df.empty:
-        # --- Always show the table (styled, fallback to interactive) ---
-        try:
-            html_table = df.to_html(classes="scroll-table", index=False, border=0)
-            st.markdown("""
-            <style>
-            .scroll-table {max-height: 360px; overflow-y: auto;}
-            .scroll-table table {background: #141f35 !important; color: #dff5ff;}
-            .scroll-table th, .scroll-table td {padding: 7px 10px;}
-            </style>
-            """, unsafe_allow_html=True)
-            st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
-        except Exception:
-            st.dataframe(df)
+        st.subheader("🔎 Parsed Table Preview (first 5 rows):")
+        st.write(df.head())
 
-        # --- Only show numeric columns for dropdown (and handle no-numeric edge case) ---
+        # Aggressively search for numeric columns
         numeric_cols = []
         for col in df.columns:
-            col_numeric = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce")
-            if col_numeric.notna().sum() > 0:
+            cleaned_col = df[col].apply(to_float)
+            if cleaned_col.notna().sum() > 0:
                 numeric_cols.append(col)
+                df[col + " (num)"] = cleaned_col  # Optional: show parsed numeric column
 
-        # Try to auto-select best numeric column
+        st.subheader("Columns with detected numbers:")
+        st.write(numeric_cols)
+
+        # Try to pick profit/pnl column
         default_profit_col = None
         priority_names = ["profit", "p/l", "result", "pnl"]
         for col in numeric_cols:
@@ -242,24 +246,13 @@ if uploaded_report:
         if not default_profit_col and numeric_cols:
             default_profit_col = numeric_cols[0]
 
-        # Dropdown for valid columns
         if numeric_cols:
             profit_col = st.selectbox(
                 "Select the profit/result column for metrics calculation:",
                 options=numeric_cols,
                 index=numeric_cols.index(default_profit_col) if default_profit_col in numeric_cols else 0
             )
-        else:
-            profit_col = st.selectbox(
-                "No numeric columns detected. Select any column to inspect manually:",
-                options=list(df.columns)
-            )
-            st.warning("No numeric columns found. Please check your report format.")
-
-        # Only run metrics if a numeric column is available
-        if numeric_cols:
-            profits_raw = df[profit_col]
-            profits = pd.to_numeric(profits_raw.astype(str).str.replace(",", "").str.replace(" ", ""), errors="coerce").dropna()
+            profits = df[profit_col].apply(to_float).dropna()
             if profits.empty:
                 st.warning("⚠️ The selected column does not contain usable numbers for profit calculation. Please try another column above.")
             else:
@@ -279,6 +272,9 @@ if uploaded_report:
                 plt.grid(True, color="#1f2e5e")
                 plt.tight_layout()
                 st.pyplot(fig)
+        else:
+            st.warning("❗️ No numeric columns found at all. Please check your report format or copy-paste the table HTML below.")
+            st.text_area("Paste your Deals table HTML here for custom extraction help:")
 else:
     st.info("Upload your MT5 backtest HTML/CSV in the sidebar.")
 
