@@ -115,7 +115,7 @@ else:
 st.markdown("---")
 
 # --- STEP 2: BACKTEST RESULTS ---
-st.markdown("## 2️⃣ Step 2: Backtest Report (Upload, Table Pick, Profit Column Pick)")
+st.markdown("## 2️⃣ Step 2: Backtest Report (Upload & Profit Column Pick)")
 metrics = {}
 df = None
 
@@ -145,10 +145,8 @@ if uploaded_report:
         if not tables:
             st.warning("❗️ No tables found in HTML report.")
         else:
-            # Only keep tables with 3+ columns (likely real trade tables)
             dfs = []
-            table_options = []
-            for idx, table in enumerate(tables):
+            for table in tables:
                 rows = table.find_all("tr")
                 if not rows:
                     continue
@@ -158,34 +156,27 @@ if uploaded_report:
                     tds = row.find_all("td")
                     if len(tds) == len(headers):
                         data.append([td.get_text(strip=True) for td in tds])
-                # Skip empty, single-col, or "report info" tables
                 if data and len(headers) >= 3:
                     df_try = pd.DataFrame(data, columns=headers)
-                    df_try = deduplicate_columns(df_try)  # Deduplicate columns here
+                    df_try = deduplicate_columns(df_try)
                     dfs.append(df_try)
-                    table_label = f"Table {idx+1}: {headers}"
-                    table_options.append(table_label)
             if not dfs:
                 st.warning("No valid trade tables found in your report.")
             else:
-                st.info(f"Found {len(dfs)} valid table(s) in your HTML report.")
-                selected_idx = st.selectbox(
-                    "Select which table looks like your Deals/trade history table:",
-                    range(len(dfs)), format_func=lambda i: table_options[i])
-                df = dfs[selected_idx]
-                st.subheader("Preview of selected table (first 5 rows):")
+                st.info(f"Found {len(dfs)} valid table(s) in your HTML report. Using the first one automatically.")
+                df = dfs[0]
+                st.subheader("Preview of detected Deals/trade history table (first 5 rows):")
                 st.write(df.head())
     else:
         uploaded_report.seek(0)
         try:
             df = pd.read_csv(uploaded_report)
-            df = deduplicate_columns(df)  # Deduplicate columns here too
+            df = deduplicate_columns(df)
             st.write(df.head())
         except Exception as e:
             st.error("Error parsing CSV report: " + str(e))
             df = None
 
-    # Numeric column auto-detect and metrics
     if df is not None and not df.empty:
         numeric_cols = []
         for col in df.columns:
@@ -257,7 +248,6 @@ if uploaded_report:
                 st.subheader("📊 Backtest Metrics")
                 st.write(metrics)
 
-                # Equity curve with clear deep blue and teal drawdown
                 st.subheader("📈 Equity Curve")
                 fig, ax = plt.subplots(figsize=(6, 3), facecolor="#0b0e1d")
                 eq = profits.cumsum()
