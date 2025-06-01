@@ -2,15 +2,21 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 import io
 import os
 import time
-from PIL import Image
 import textwrap
+from PIL import Image
 from bs4 import BeautifulSoup
 
-# --- 1. PAGE CONFIG & THEME ---
+# --- OpenAI import (for GPT suggestions) ---
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+# --- PAGE CONFIG & THEME ---
 st.set_page_config(
     page_title="TraderIQ 🤖 AI-Powered MT5 Optimizer",
     layout="wide",
@@ -19,77 +25,85 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-body, .main, .block-container {
-    background-color: #0b0e1d;
-    color: #cfdcff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-h1, h2, h3, h4, h5, h6 {
-    color: #68c0ff !important;
-    text-shadow: 0 0 6px #68c0ff;
-}
-div.stButton > button:first-child {
-    font-size: 18px;
-    padding: 12px 30px;
-    min-width: 220px;
-    border-radius: 10px;
-    font-weight: 700;
-    background: linear-gradient(90deg, #0ff 0%, #68f 100%);
-    color: #001f3f;
-}
-input, textarea {
-    background-color: #1b2038 !important;
-    color: #cfdcff !important;
-    border-radius: 8px !important;
-    border: 1px solid #3a4a75 !important;
-    padding: 8px !important;
-}
-.stTable thead tr th {
-    background: #142345 !important;
-    color: #68c0ff !important;
-    font-weight: 700 !important;
-    text-align: center !important;
-}
-.stTable tbody tr {
-    background: #0b0e1d !important;
-    border-bottom: 1px solid #243a78 !important;
-}
-.stTable tbody tr:hover {
-    background: #1a2c54 !important;
-}
+body, .main, .block-container {background-color: #0b0e1d; color: #cfdcff;}
+h1, h2, h3, h4, h5, h6 {color: #68c0ff !important;}
+div.stButton > button:first-child {font-size: 18px; padding: 12px 30px; min-width: 220px; border-radius: 10px; font-weight: 700; background: linear-gradient(90deg, #0ff 0%, #68f 100%); color: #001f3f;}
+input, textarea {background-color: #1b2038 !important; color: #cfdcff !important; border-radius: 8px !important; border: 1px solid #3a4a75 !important; padding: 8px !important;}
+.stTable thead tr th {background: #142345 !important; color: #68c0ff !important;}
+.stTable tbody tr {background: #0b0e1d !important; border-bottom: 1px solid #243a78 !important;}
+.stTable tbody tr:hover {background: #1a2c54 !important;}
 footer {visibility: hidden;}
+hr {border: 1px solid #243a78;}
 </style>
 """, unsafe_allow_html=True)
 
-col1, col2 = st.columns([1, 3])
-with col1:
-    if os.path.exists("TradeIQ.png"):
-        st.image("TradeIQ.png", width=160)
-    else:
-        st.warning("Logo `TradeIQ.png` not found.")
-with col2:
-    st.markdown("# TraderIQ 🤖 AI-Powered MT5 Optimizer")
-    st.markdown("Upload your backtest CSV or HTML and EA file on the left to begin super-intelligent optimization.")
-
-# --- 2. FILE UPLOADS ---
+# --- SIDEBAR: UPLOADS & INSTRUCTIONS ---
+st.sidebar.image("TradeIQ.png", width=160) if os.path.exists("TradeIQ.png") else st.sidebar.write(" ")
+st.sidebar.markdown("## Start Here")
 st.sidebar.markdown(
-    "🛈 <b>For <span style='color:#68c0ff'>MT5</span>, please upload the <span style='color:#68c0ff'>HTML report</span> of your backtest.<br>"
-    "(Right-click in the Strategy Tester → Save as Report)</b>",
-    unsafe_allow_html=True
-)
-uploaded_report = st.sidebar.file_uploader(
-    "Upload MT5 Backtest CSV or HTML Report", type=["csv", "html"]
-)
-uploaded_set = st.sidebar.file_uploader("Upload EA", type=["set", "ini"])
-st.sidebar.caption("CSV or HTML: MT5 trade log or full report. EA: .set or .ini")
+    "🔹 <b>Step 1:</b> <span style='color:#68c0ff'>Upload your EA <b>.set</b> or <b>.ini</b> file.</span>",
+    unsafe_allow_html=True)
+uploaded_set = st.sidebar.file_uploader("Upload EA (.set or .ini)", type=["set", "ini"])
 
-if (uploaded_report is None) and (uploaded_set is None):
-    st.info("Waiting for both files…\n• Upload backtest CSV/HTML report\n• Upload EA file")
+st.sidebar.markdown(
+    "🔹 <b>Step 2:</b> <span style='color:#68c0ff'>Upload your MT5 Backtest <b>HTML</b> or <b>CSV</b> report.</span> <br><i>Right-click in Strategy Tester → Save as Report (HTML)</i>",
+    unsafe_allow_html=True)
+uploaded_report = st.sidebar.file_uploader("Upload Backtest CSV or HTML", type=["csv", "html"])
 
-# --- 3. HELPERS ---
+st.sidebar.caption("Both files required for full optimization. You may preview each step as you upload.")
 
-def clamp(val, min_val, max_val):
-    return max(min_val, min(max_val, val))
+# --- 1. SETFILE PREVIEW / PARSE ---
+st.markdown("## 1️⃣ Step 1: Preview Your EA Settings")
+editable_params = {}
+full_output_lines = []
+if uploaded_set:
+    def parse_set_file(file):
+        file.seek(0)
+        raw = file.read()
+        for enc in ("utf-16", "utf-16le", "utf-8", "latin-1"):
+            try:
+                content = raw.decode(enc)
+                break
+            except:
+                continue
+        else:
+            content = raw.decode("utf-8", errors="replace")
+        lines = content.splitlines()
+        sections = {}
+        current = None
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                current = stripped.strip("[]")
+                sections[current] = []
+            elif current is not None:
+                sections.setdefault(current, []).append(line)
+            else:
+                current = "Parameters"
+                sections.setdefault(current, []).append(line)
+        return sections, lines
+
+    try:
+        sections, full_output_lines = parse_set_file(uploaded_set)
+        editable_params.clear()
+        for sec, lines in sections.items():
+            for line in lines:
+                if "=" in line and not line.strip().startswith(";"):
+                    k, v = line.split("=", 1)
+                    editable_params[k.strip()] = v.split("||")[0].strip()
+        st.code("\n".join(full_output_lines), language="ini")
+        st.success("Setfile uploaded and parsed.")
+    except Exception as e:
+        st.error(f"Error parsing setfile: {e}")
+else:
+    st.info("Upload your EA setfile (.set or .ini) in the sidebar.")
+
+st.markdown("---")
+
+# --- 2. BACKTEST RESULTS (HTML/CSV) ---
+st.markdown("## 2️⃣ Step 2: Backtest Results (MT5)")
+metrics = {}
+df = None
 
 def clean_profit(val):
     try:
@@ -178,182 +192,6 @@ def extract_deals_table_from_mt5_html(html_bytes):
         df["Profit"] = df["Profit"].astype(str).str.replace(" ", "").str.replace(",", "").astype(float, errors="ignore")
     return df
 
-def parse_mt5_report(file):
-    file.seek(0)
-    raw = file.read()
-    try:
-        text = raw.decode("utf-8")
-    except:
-        text = raw.decode("utf-8", errors="replace")
-    lines = text.splitlines()
-    header_idx = None
-    for i, line in enumerate(lines):
-        if ("Profit" in line) and ("Ticket" in line or "Order" in line):
-            header_idx = i
-            break
-    if header_idx is None:
-        raise ValueError("Cannot find `Profit` header.")
-    end_idx = None
-    for i in range(header_idx+1, len(lines)):
-        if lines[i].strip() == "" or any(tok in lines[i] for tok in ["Summary", "Report", "[", "input"]):
-            end_idx = i
-            break
-    if end_idx is None:
-        end_idx = len(lines)
-    table_text = "\n".join(lines[header_idx:end_idx])
-    return pd.read_csv(io.StringIO(table_text))
-
-def parse_set_file(file):
-    file.seek(0)
-    raw = file.read()
-    for enc in ("utf-16", "utf-16le", "utf-8", "latin-1"):
-        try:
-            if isinstance(raw, bytes):
-                content = raw.decode(enc)
-            else:
-                content = raw
-            if "\x00" in content:
-                content = content.replace("\x00", "")
-            if "=" in content:
-                break
-        except:
-            continue
-    else:
-        content = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
-
-    lines = content.splitlines()
-    sections = {}
-    current = None
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            current = stripped.strip("[]")
-            sections[current] = []
-        elif current is not None:
-            sections.setdefault(current, []).append(line)
-        else:
-            current = "Parameters"
-            sections.setdefault(current, []).append(line)
-    return sections, lines
-
-def generate_optimized_setfile_text(full_lines, optimized_params):
-    out = []
-    for line in full_lines:
-        stripped = line.strip()
-        if "=" in line and not stripped.startswith(";"):
-            key = line.split("=", 1)[0].strip()
-            if key in optimized_params:
-                parts = line.split("=", 1)[1].split("||", 1)
-                comment = f"||{parts[1]}" if len(parts) > 1 else ""
-                out.append(f"{key}={optimized_params[key]}{comment}")
-            else:
-                out.append(line)
-        else:
-            out.append(line)
-    return "\n".join(out)
-
-def super_intelligent_optimizer(params, metrics):
-    optimized = params.copy()
-    messages = []
-    dd = metrics["max_drawdown"]
-    pf = metrics["profit_factor"]
-    wr = metrics["win_rate"]
-    expv = metrics["expectancy"]
-    sr = metrics["sharpe_ratio"]
-    vol = metrics["volatility_annualized"]
-    streak = metrics["max_consecutive_losses"]
-    avg_w = metrics["avg_win"]
-    avg_l = abs(metrics["avg_loss"])
-    # Example heuristics:
-    # 1) Dynamic Risk
-    if "RiskPercent" in optimized:
-        try:
-            r_old = float(optimized["RiskPercent"])
-            rf = 1.0
-            if dd > 20 or vol > 0.06:
-                rf *= 0.4
-            elif dd > 10 or vol > 0.04:
-                rf *= 0.7
-            if pf < 1.5:
-                rf *= 0.6
-            new_r = clamp(r_old * rf, 0.05, r_old)
-            optimized["RiskPercent"] = str(round(new_r, 3))
-            messages.append(f"RiskPercent → {new_r} (based on drawdown/volatility).")
-        except:
-            pass
-    # 2) TP/SL Adjustment
-    if "TakeProfit" in optimized and "StopLoss" in optimized:
-        try:
-            tp_old = float(optimized["TakeProfit"])
-            sl_old = float(optimized["StopLoss"])
-            vf = 1.0 if dd < 10 else 0.6
-            new_sl = clamp(min(sl_old, avg_l * 1.2) * vf, 2, 500)
-            base_rr = clamp(1.5 + (expv / 100) + (wr / 100), 1.5, 3.0)
-            new_tp = clamp(new_sl * base_rr, 5, 1000)
-            optimized["StopLoss"] = str(round(new_sl, 2))
-            optimized["TakeProfit"] = str(round(new_tp, 2))
-            messages.append(f"StopLoss → {new_sl}, TakeProfit → {new_tp} (RR={round(base_rr,2)}).")
-        except:
-            pass
-    # 3) RSI Tuning
-    if all(k in optimized for k in ["RSI_Period", "RSI_Overbought", "RSI_Oversold"]):
-        try:
-            rspi = int(float(optimized["RSI_Period"]))
-            ob = int(float(optimized["RSI_Overbought"]))
-            osv = int(float(optimized["RSI_Oversold"]))
-            if sr < 0.6 or streak > 3:
-                rspi = clamp(rspi + 2, 7, 21)
-                ob = clamp(ob - 5, 70, 90)
-                osv = clamp(osv + 5, 10, 30)
-            else:
-                ob = clamp(ob + 3, 70, 95)
-                osv = clamp(osv - 3, 5, 30)
-            optimized["RSI_Period"] = str(rspi)
-            optimized["RSI_Overbought"] = str(ob)
-            optimized["RSI_Oversold"] = str(osv)
-            messages.append(f"RSI → Period {rspi}, OB {ob}, OS {osv}.")
-        except:
-            pass
-    # 4) MA Filter
-    if all(k in optimized for k in ["MovingAveragePeriodShort", "MovingAveragePeriodLong"]):
-        try:
-            sma = int(float(optimized["MovingAveragePeriodShort"]))
-            lma = int(float(optimized["MovingAveragePeriodLong"]))
-            if sr < 0.8:
-                sma = clamp(sma + 5, 5, 50)
-                lma = clamp(lma + 10, sma + 5, 200)
-            optimized["MovingAveragePeriodShort"] = str(sma)
-            optimized["MovingAveragePeriodLong"] = str(lma)
-            messages.append(f"MA → Short {sma}, Long {lma}.")
-        except:
-            pass
-    return optimized, messages
-
-# --- 4. MAIN LOGIC ---
-
-editable_params = {}
-full_output_lines = []
-metrics = {}
-df = None
-parsed = False
-
-# 4a) Parse `.set`
-if uploaded_set:
-    try:
-        sections, full_output_lines = parse_set_file(uploaded_set)
-        editable_params.clear()
-        for sec, lines in sections.items():
-            for line in lines:
-                if "=" in line and not line.strip().startswith(";"):
-                    k, v = line.split("=", 1)
-                    editable_params[k.strip()] = v.split("||")[0].strip()
-        st.subheader("📄 EA Set File Preview")
-        st.code("\n".join(full_output_lines), language="ini")
-    except Exception as e:
-        st.error(f"Error parsing setfile: {e}")
-
-# 4b) Parse CSV or HTML & show metrics/chart
-df = None
 if uploaded_report:
     filetype = os.path.splitext(uploaded_report.name)[1].lower()
     if filetype == ".html":
@@ -375,12 +213,8 @@ if uploaded_report:
         try:
             df = pd.read_csv(uploaded_report)
         except:
-            try:
-                df = parse_mt5_report(uploaded_report)
-                st.success("Extracted trades from MT5 report.")
-            except Exception as e:
-                st.error(f"Error parsing CSV/report: {e}")
-                df = None
+            st.error("Error parsing CSV report.")
+            df = None
 
     if df is not None:
         profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
@@ -389,7 +223,6 @@ if uploaded_report:
             st.stop()
         profits = df[profit_col].apply(clean_profit).dropna()
         metrics = calculate_advanced_metrics(profits)
-
         st.subheader("📊 Backtest Metrics")
         st.write(metrics)
 
@@ -406,11 +239,109 @@ if uploaded_report:
         plt.grid(True, color="#1f2e5e")
         plt.tight_layout()
         st.pyplot(fig)
+else:
+    st.info("Upload your MT5 backtest HTML/CSV in the sidebar.")
 
-# 4c) If both files uploaded, show optimizer results
+st.markdown("---")
+
+# --- 3. AI OPTIMIZATION ---
+
+def clamp(val, min_val, max_val):
+    return max(min_val, min(max_val, val))
+
+def super_intelligent_optimizer(params, metrics):
+    optimized = params.copy()
+    messages = []
+    dd = metrics["max_drawdown"]
+    pf = metrics["profit_factor"]
+    wr = metrics["win_rate"]
+    expv = metrics["expectancy"]
+    sr = metrics["sharpe_ratio"]
+    vol = metrics["volatility_annualized"]
+    streak = metrics["max_consecutive_losses"]
+    avg_w = metrics["avg_win"]
+    avg_l = abs(metrics["avg_loss"])
+    # Heuristic-based adjustments (examples):
+    if "RiskPercent" in optimized:
+        try:
+            r_old = float(optimized["RiskPercent"])
+            rf = 1.0
+            if dd > 20 or vol > 0.06:
+                rf *= 0.4
+            elif dd > 10 or vol > 0.04:
+                rf *= 0.7
+            if pf < 1.5:
+                rf *= 0.6
+            new_r = clamp(r_old * rf, 0.05, r_old)
+            optimized["RiskPercent"] = str(round(new_r, 3))
+            messages.append(f"RiskPercent → {new_r} (based on drawdown/volatility).")
+        except:
+            pass
+    if "TakeProfit" in optimized and "StopLoss" in optimized:
+        try:
+            tp_old = float(optimized["TakeProfit"])
+            sl_old = float(optimized["StopLoss"])
+            vf = 1.0 if dd < 10 else 0.6
+            new_sl = clamp(min(sl_old, avg_l * 1.2) * vf, 2, 500)
+            base_rr = clamp(1.5 + (expv / 100) + (wr / 100), 1.5, 3.0)
+            new_tp = clamp(new_sl * base_rr, 5, 1000)
+            optimized["StopLoss"] = str(round(new_sl, 2))
+            optimized["TakeProfit"] = str(round(new_tp, 2))
+            messages.append(f"StopLoss → {new_sl}, TakeProfit → {new_tp} (RR={round(base_rr,2)}).")
+        except:
+            pass
+    if all(k in optimized for k in ["RSI_Period", "RSI_Overbought", "RSI_Oversold"]):
+        try:
+            rspi = int(float(optimized["RSI_Period"]))
+            ob = int(float(optimized["RSI_Overbought"]))
+            osv = int(float(optimized["RSI_Oversold"]))
+            if sr < 0.6 or streak > 3:
+                rspi = clamp(rspi + 2, 7, 21)
+                ob = clamp(ob - 5, 70, 90)
+                osv = clamp(osv + 5, 10, 30)
+            else:
+                ob = clamp(ob + 3, 70, 95)
+                osv = clamp(osv - 3, 5, 30)
+            optimized["RSI_Period"] = str(rspi)
+            optimized["RSI_Overbought"] = str(ob)
+            optimized["RSI_Oversold"] = str(osv)
+            messages.append(f"RSI → Period {rspi}, OB {ob}, OS {osv}.")
+        except:
+            pass
+    if all(k in optimized for k in ["MovingAveragePeriodShort", "MovingAveragePeriodLong"]):
+        try:
+            sma = int(float(optimized["MovingAveragePeriodShort"]))
+            lma = int(float(optimized["MovingAveragePeriodLong"]))
+            if sr < 0.8:
+                sma = clamp(sma + 5, 5, 50)
+                lma = clamp(lma + 10, sma + 5, 200)
+            optimized["MovingAveragePeriodShort"] = str(sma)
+            optimized["MovingAveragePeriodLong"] = str(lma)
+            messages.append(f"MA → Short {sma}, Long {lma}.")
+        except:
+            pass
+    return optimized, messages
+
+def generate_optimized_setfile_text(full_lines, optimized_params):
+    out = []
+    for line in full_lines:
+        stripped = line.strip()
+        if "=" in line and not stripped.startswith(";"):
+            key = line.split("=", 1)[0].strip()
+            if key in optimized_params:
+                parts = line.split("=", 1)[1].split("||", 1)
+                comment = f"||{parts[1]}" if len(parts) > 1 else ""
+                out.append(f"{key}={optimized_params[key]}{comment}")
+            else:
+                out.append(line)
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+# --- MAIN: AI Optimization UI ---
+st.markdown("## 3️⃣ Step 3: AI Optimization & Download")
+
 if uploaded_set and uploaded_report and metrics and editable_params:
-    st.markdown("---")
-    st.header("🚀 AI-Powered Optimization Results")
     with st.spinner("Running super-intelligent optimizer..."):
         time.sleep(1)
         opt_params, heuristic_msgs = super_intelligent_optimizer(editable_params, metrics)
@@ -419,6 +350,48 @@ if uploaded_set and uploaded_report and metrics and editable_params:
     for m in heuristic_msgs:
         st.write(f"- {m}")
 
+    # --- OpenAI GPT-powered advice (if enabled) ---
+    st.subheader("🧠 GPT-Powered Suggestions")
+    gpt_advice = ""
+    if OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY"):
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        prompt = f"""
+You are an MT5 strategy optimization expert.
+Current EA parameters:
+{ {k: opt_params[k] for k in opt_params} }
+
+Backtest metrics:
+- Trades: {metrics['total_trades']}
+- Win Rate: {metrics['win_rate']}%
+- Total Profit: {metrics['total_profit']}
+- Avg Win: {metrics['avg_win']}, Avg Loss: {metrics['avg_loss']}
+- Profit Factor: {metrics['profit_factor']}
+- Expectancy: {metrics['expectancy']}
+- Sharpe: {metrics['sharpe_ratio']}
+- Max Drawdown: {metrics['max_drawdown']}
+- Volatility: {metrics['volatility_annualized']}
+- Max Consecutive Losses: {metrics['max_consecutive_losses']}
+
+Give concise bullet suggestions for further tuning. Only refer to the above parameters.
+"""
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a world-class MT5 optimizer AI."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=300
+            )
+            gpt_advice = response.choices[0].message.content.strip()
+        except Exception as e:
+            gpt_advice = f"(GPT advice failed: {e})"
+    else:
+        gpt_advice = "(OpenAI not available—set your API key in your environment to enable AI suggestions.)"
+    st.info(textwrap.fill(gpt_advice, width=90))
+
+    # --- Show Parameter Comparison ---
     st.subheader("📋 Parameter Comparison")
     comp_list = []
     keys = sorted(set(editable_params.keys()) | set(opt_params.keys()))
@@ -430,6 +403,7 @@ if uploaded_set and uploaded_report and metrics and editable_params:
         })
     st.table(comp_list)
 
+    # --- Download optimized set file ---
     new_text = generate_optimized_setfile_text(full_output_lines, opt_params)
     st.markdown("### 📥 Download Your AI-Optimized `.set` File")
     st.download_button(
@@ -438,6 +412,13 @@ if uploaded_set and uploaded_report and metrics and editable_params:
         file_name="TraderIQ_AI_Optimized.set",
         mime="text/plain"
     )
+
+elif uploaded_set and not uploaded_report:
+    st.info("Upload your backtest report (CSV/HTML) to enable AI optimization.")
+elif uploaded_report and not uploaded_set:
+    st.info("Upload your EA setfile (.set or .ini) to enable AI optimization.")
+else:
+    st.info("Upload both files in the sidebar to see optimization results.")
 
 st.markdown("---")
 st.caption("TraderIQ: AI-Driven MT5 Strategy Optimizer. Upload backtest CSV/HTML and EA `.set`/`.ini` to get started.")
