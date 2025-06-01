@@ -210,6 +210,20 @@ if uploaded_report:
         df = extract_deals_table_from_mt5_html(html_bytes)
         if df is not None and not df.empty:
             st.success("Extracted 'Deals' table from MT5 HTML report.")
+
+            # --- Show interactive, scrollable HTML table ---
+            st.markdown("""
+            <style>
+            .scroll-table {max-height: 360px; overflow-y: auto;}
+            .scroll-table table {background: #141f35 !important; color: #dff5ff;}
+            .scroll-table th, .scroll-table td {padding: 7px 10px;}
+            </style>
+            """, unsafe_allow_html=True)
+
+            html_table = df.to_html(classes="scroll-table", index=False, border=0)
+            st.markdown(f'<div class="scroll-table">{html_table}</div>', unsafe_allow_html=True)
+
+            # (Optional) CSV download still available
             st.download_button(
                 label="Download Cleaned Deals Table as CSV",
                 data=df.to_csv(index=False).encode("utf-8"),
@@ -227,7 +241,8 @@ if uploaded_report:
             st.error("Error parsing CSV report.")
             df = None
 
-    if df is not None:
+    # Only show metrics/equity if df loaded
+    if df is not None and not df.empty:
         profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
         if not profit_col:
             st.error("`Profit` column not found.")
