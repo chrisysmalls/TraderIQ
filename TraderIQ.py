@@ -10,7 +10,12 @@ from PIL import Image
 from bs4 import BeautifulSoup
 import re
 
-# 🚨 THIS MUST BE THE FIRST STREAMLIT COMMAND!
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
 st.set_page_config(
     page_title="TraderIQ 🤖 AI-Powered MT5 Optimizer",
     layout="wide",
@@ -39,6 +44,7 @@ uploaded_report = st.sidebar.file_uploader("Upload Backtest CSV or HTML", type=[
 st.markdown("# TraderIQ 🤖 AI-Powered MT5 Optimizer")
 st.markdown("Upload your backtest CSV or HTML and EA file on the left to begin super-intelligent optimization.")
 
+# ---- 1. SETFILE ----
 editable_params = {}
 full_output_lines = []
 if uploaded_set:
@@ -76,6 +82,7 @@ if uploaded_set:
                 if "=" in line and not line.strip().startswith(";"):
                     k, v = line.split("=", 1)
                     editable_params[k.strip()] = v.split("||")[0].strip()
+        st.markdown("### 📄 EA Set File Preview")
         st.code("\n".join(full_output_lines), language="ini")
         st.success("Setfile uploaded and parsed.")
     except Exception as e:
@@ -103,6 +110,7 @@ def to_float(val):
     except:
         return np.nan
 
+# ---- HTML/CSV Report Table Extraction ----
 if uploaded_report:
     filetype = os.path.splitext(uploaded_report.name)[1].lower()
     if filetype == ".html":
@@ -148,7 +156,8 @@ if uploaded_report:
             st.error("Error parsing CSV report: " + str(e))
             df = None
 
-# ---- NUMERIC COLUMN LOGIC/DIAGNOSE ----
+# ---- NUMERIC COLUMN AUTO-DETECT ----
+profit_col = None
 if df is not None and not df.empty:
     numeric_cols = []
     for col in df.columns:
@@ -158,10 +167,25 @@ if df is not None and not df.empty:
             df[col + " (num)"] = cleaned_col
     st.subheader("Columns with detected numbers:")
     st.write(numeric_cols)
+
+    # Try to auto-detect the correct column
+    profit_col = None
+    profit_names = ["profit", "p/l", "result", "pnl"]
+    for col in numeric_cols:
+        for name in profit_names:
+            if name in col.lower():
+                profit_col = col
+                break
+        if profit_col:
+            break
+    if not profit_col and numeric_cols:
+        profit_col = numeric_cols[0]
+
     if numeric_cols:
         profit_col = st.selectbox(
             "Select the profit/result column for metrics calculation:",
-            options=numeric_cols
+            options=numeric_cols,
+            index=numeric_cols.index(profit_col) if profit_col in numeric_cols else 0
         )
         profits = df[profit_col].apply(to_float).dropna()
         if profits.empty:
@@ -220,6 +244,175 @@ if df is not None and not df.empty:
             plt.grid(True, color="#1f2e5e")
             plt.tight_layout()
             st.pyplot(fig)
+
+            # ---- 3. AI Optimization Section ----
+            st.markdown("---")
+            st.markdown("## 3️⃣ AI Optimization & Download")
+            def clamp(val, min_val, max_val):
+                return max(min_val, min(max_val, val))
+
+            def super_intelligent_optimizer(params, metrics):
+                optimized = params.copy()
+                messages = []
+                dd = metrics["max_drawdown"]
+                pf = metrics["profit_factor"]
+                wr = metrics["win_rate"]
+                expv = metrics["expectancy"]
+                sr = metrics["sharpe_ratio"]
+                vol = metrics["volatility_annualized"]
+                streak = metrics["max_consecutive_losses"]
+                avg_w = metrics["avg_win"]
+                avg_l = abs(metrics["avg_loss"])
+                if "RiskPercent" in optimized:
+                    try:
+                        r_old = float(optimized["RiskPercent"])
+                        rf = 1.0
+                        if dd > 20 or vol > 0.06:
+                            rf *= 0.4
+                        elif dd > 10 or vol > 0.04:
+                            rf *= 0.7
+                        if pf < 1.5:
+                            rf *= 0.6
+                        new_r = clamp(r_old * rf, 0.05, r_old)
+                        optimized["RiskPercent"] = str(round(new_r, 3))
+                        messages.append(f"RiskPercent → {new_r} (based on drawdown/volatility).")
+                    except:
+                        pass
+                if "TakeProfit" in optimized and "StopLoss" in optimized:
+                    try:
+                        tp_old = float(optimized["TakeProfit"])
+                        sl_old = float(optimized["StopLoss"])
+                        vf = 1.0 if dd < 10 else 0.6
+                        new_sl = clamp(min(sl_old, avg_l * 1.2) * vf, 2, 500)
+                        base_rr = clamp(1.5 + (expv / 100) + (wr / 100), 1.5, 3.0)
+                        new_tp = clamp(new_sl * base_rr, 5, 1000)
+                        optimized["StopLoss"] = str(round(new_sl, 2))
+                        optimized["TakeProfit"] = str(round(new_tp, 2))
+                        messages.append(f"StopLoss → {new_sl}, TakeProfit → {new_tp} (RR={round(base_rr,2)}).")
+                    except:
+                        pass
+                if all(k in optimized for k in ["RSI_Period", "RSI_Overbought", "RSI_Oversold"]):
+                    try:
+                        rspi = int(float(optimized["RSI_Period"]))
+                        ob = int(float(optimized["RSI_Overbought"]))
+                        osv = int(float(optimized["RSI_Oversold"]))
+                        if sr < 0.6 or streak > 3:
+                            rspi = clamp(rspi + 2, 7, 21)
+                            ob = clamp(ob - 5, 70, 90)
+                            osv = clamp(osv + 5, 10, 30)
+                        else:
+                            ob = clamp(ob + 3, 70, 95)
+                            osv = clamp(osv - 3, 5, 30)
+                        optimized["RSI_Period"] = str(rspi)
+                        optimized["RSI_Overbought"] = str(ob)
+                        optimized["RSI_Oversold"] = str(osv)
+                        messages.append(f"RSI → Period {rspi}, OB {ob}, OS {osv}.")
+                    except:
+                        pass
+                if all(k in optimized for k in ["MovingAveragePeriodShort", "MovingAveragePeriodLong"]):
+                    try:
+                        sma = int(float(optimized["MovingAveragePeriodShort"]))
+                        lma = int(float(optimized["MovingAveragePeriodLong"]))
+                        if sr < 0.8:
+                            sma = clamp(sma + 5, 5, 50)
+                            lma = clamp(lma + 10, sma + 5, 200)
+                        optimized["MovingAveragePeriodShort"] = str(sma)
+                        optimized["MovingAveragePeriodLong"] = str(lma)
+                        messages.append(f"MA → Short {sma}, Long {lma}.")
+                    except:
+                        pass
+                return optimized, messages
+
+            def generate_optimized_setfile_text(full_lines, optimized_params):
+                out = []
+                for line in full_lines:
+                    stripped = line.strip()
+                    if "=" in line and not stripped.startswith(";"):
+                        key = line.split("=", 1)[0].strip()
+                        if key in optimized_params:
+                            parts = line.split("=", 1)[1].split("||", 1)
+                            comment = f"||{parts[1]}" if len(parts) > 1 else ""
+                            out.append(f"{key}={optimized_params[key]}{comment}")
+                        else:
+                            out.append(line)
+                    else:
+                        out.append(line)
+                return "\n".join(out)
+
+            if uploaded_set and editable_params:
+                with st.spinner("Running super-intelligent optimizer..."):
+                    time.sleep(1)
+                    opt_params, heuristic_msgs = super_intelligent_optimizer(editable_params, metrics)
+
+                st.subheader("⚙️ Heuristic Adjustments")
+                for m in heuristic_msgs:
+                    st.write(f"- {m}")
+
+                # --- OpenAI GPT-powered advice (if enabled) ---
+                st.subheader("🧠 GPT-Powered Suggestions")
+                gpt_advice = ""
+                if OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY"):
+                    openai.api_key = os.getenv("OPENAI_API_KEY")
+                    prompt = f"""
+You are an MT5 strategy optimization expert.
+Current EA parameters:
+{ {k: opt_params[k] for k in opt_params} }
+
+Backtest metrics:
+- Trades: {metrics['total_trades']}
+- Win Rate: {metrics['win_rate']}%
+- Total Profit: {metrics['total_profit']}
+- Avg Win: {metrics['avg_win']}, Avg Loss: {metrics['avg_loss']}
+- Profit Factor: {metrics['profit_factor']}
+- Expectancy: {metrics['expectancy']}
+- Sharpe: {metrics['sharpe_ratio']}
+- Max Drawdown: {metrics['max_drawdown']}
+- Volatility: {metrics['volatility_annualized']}
+- Max Consecutive Losses: {metrics['max_consecutive_losses']}
+
+Give concise bullet suggestions for further tuning. Only refer to the above parameters.
+"""
+                    try:
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4o-mini",
+                            messages=[
+                                {"role": "system", "content": "You are a world-class MT5 optimizer AI."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            temperature=0.7,
+                            max_tokens=300
+                        )
+                        gpt_advice = response.choices[0].message.content.strip()
+                    except Exception as e:
+                        gpt_advice = f"(GPT advice failed: {e})"
+                else:
+                    gpt_advice = "(AI suggestions are optional. Add your OpenAI API key to unlock GPT-powered tips!)"
+                st.info(textwrap.fill(gpt_advice, width=90))
+
+                # --- Show Parameter Comparison ---
+                st.subheader("📋 Parameter Comparison")
+                comp_list = []
+                keys = sorted(set(editable_params.keys()) | set(opt_params.keys()))
+                for k in keys:
+                    comp_list.append({
+                        "Parameter": k,
+                        "Original": editable_params.get(k, ""),
+                        "Optimized": opt_params.get(k, editable_params.get(k, ""))
+                    })
+                st.table(comp_list)
+
+                # --- Download optimized set file ---
+                new_text = generate_optimized_setfile_text(full_output_lines, opt_params)
+                st.markdown("### 📥 Download Your AI-Optimized `.set` File")
+                st.download_button(
+                    label="Download AI-Optimized Set File",
+                    data=new_text,
+                    file_name="TraderIQ_AI_Optimized.set",
+                    mime="text/plain"
+                )
+            else:
+                st.info("Upload your EA setfile (.set or .ini) to enable AI optimization.")
+
     else:
         st.warning("❗️ No numeric columns found at all. Please check your report format or select another table.")
 
