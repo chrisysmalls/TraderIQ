@@ -215,7 +215,7 @@ parsed = False
 
 # 4a) Parse `.set` (unchanged)
 if uploaded_set:
-    # ... your set file logic ...
+    pass  # <--- Fixed indentation! Add your set file logic here if needed
 
 # 4b) Parse CSV or HTML & show metrics/chart
 df = None
