@@ -1,146 +1,155 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
-import os
-from PIL import Image
-import io
+import matplotlib.pyplot as plt
 import matplotlib as mpl
+import io
+import os
 import time
+from PIL import Image
 import textwrap
+import openai  # pip install openai
 
-# --- Page config ---
-st.set_page_config(page_title="TraderIQ: AI-Powered MT5 Strategy Optimizer", layout="wide", page_icon="🤖")
+# --- 1. PAGE CONFIG & THEME ---
+st.set_page_config(
+    page_title="TraderIQ 🤖 AI-Powered MT5 Optimizer",
+    layout="wide",
+    page_icon="🤖"
+)
 
-# --- CSS Styling for polished dark futuristic UI ---
 st.markdown("""
 <style>
+/* --- FUTURISTIC DARK THEME --- */
+body, .main, .block-container {
+    background-color: #0b0e1d;
+    color: #cfdcff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+h1, h2, h3, h4, h5, h6 {
+    color: #68c0ff !important;
+    text-shadow: 0 0 6px #68c0ff;
+}
 div.stButton > button:first-child {
     font-size: 18px;
     padding: 12px 30px;
     min-width: 220px;
-    border-radius: 12px;
+    border-radius: 10px;
     font-weight: 700;
     background: linear-gradient(90deg, #0ff 0%, #68f 100%);
     color: #001f3f;
 }
-body, .main, .block-container {
-    background-color: #0c1225;
-    color: #a0b9ff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-h1, h2, h3, h4, h5, h6 {
-    color: #76b0f1 !important;
-    text-shadow: 0 0 6px #76b0f1;
-}
-.stMarkdown, .stText, .stTable {
+input, textarea {
+    background-color: #1b2038 !important;
     color: #cfdcff !important;
+    border-radius: 8px !important;
+    border: 1px solid #3a4a75 !important;
+    padding: 8px !important;
 }
 .stTable thead tr th {
     background: #142345 !important;
-    color: #76b0f1 !important;
+    color: #68c0ff !important;
     font-weight: 700 !important;
     text-align: center !important;
 }
 .stTable tbody tr {
-    background: #0c1225 !important;
+    background: #0b0e1d !important;
     border-bottom: 1px solid #243a78 !important;
 }
 .stTable tbody tr:hover {
-    background: #1f2d5f !important;
+    background: #1a2c54 !important;
 }
+footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- Load logo ---
 col1, col2 = st.columns([1, 3])
 with col1:
-    logo_path = "TradeIQ.png"
-    if os.path.exists(logo_path):
-        logo_img = Image.open(logo_path)
-        st.image(logo_img, width=180)
+    if os.path.exists("TradeIQ.png"):
+        st.image("TradeIQ.png", width=160)
     else:
-        st.warning("Logo file 'TradeIQ.png' not found in app folder.")
-
+        st.warning("Logo `TradeIQ.png` not found.")
 with col2:
-    st.markdown("# 🤖 TraderIQ AI-Powered MT5 Strategy Optimizer")
-    st.markdown("Upload your backtest CSV and EA .set/.ini files on the left to begin an advanced AI analysis and optimization session.")
+    st.markdown("# TraderIQ 🤖 AI-Powered MT5 Optimizer")
+    st.markdown("Upload your backtest CSV and EA `.set`/`.ini` files on the left to begin the super-intelligent optimization.")
 
-# --- File upload ---
-uploaded_csv = st.sidebar.file_uploader("Upload MT5 Backtest CSV or Report", type=["csv"])
-uploaded_set = st.sidebar.file_uploader("Upload EA .set or .ini File", type=["set","ini"])
+# --- 2. FILE UPLOADS ---
+uploaded_csv = st.sidebar.file_uploader("1) Upload MT5 Backtest CSV or Report", type=["csv"])
+uploaded_set = st.sidebar.file_uploader("2) Upload EA `.set` or `.ini` File", type=["set", "ini"])
+st.sidebar.caption("Supported CSV formats: MT5 trade logs or full report.  EA file: `.set` or `.ini`.")
 
-# --- Helper functions ---
-def clamp(value, min_val, max_val):
-    return max(min_val, min(max_val, value))
+if (uploaded_csv is None) and (uploaded_set is None):
+    st.info("Waiting for both files…\n- Upload your backtest CSV/report\n- Upload your EA `.set`/`.ini`")
 
-def clean_profit_value(val):
+# --- 3. HELPER FUNCTIONS ---
+
+def clamp(val, min_val, max_val):
+    return max(min_val, min(max_val, val))
+
+def clean_profit(val):
+    """Clean a profit field string to float."""
     try:
         if pd.isna(val):
             return np.nan
-        s = str(val).replace(" ", "").replace(",", "")
-        if s in ['', '-', '--']:
+        s = str(val).replace(",", "").strip()
+        if s in ["", "-", "--"]:
             return 0.0
-        if s.startswith('-.'):
-            s = '-0.' + s[2:]
+        if s.startswith("-."):
+            s = "-0." + s[2:]
         return float(s)
     except:
         return np.nan
 
-def calculate_max_drawdown(equity):
+def calculate_advanced_metrics(profits_series: pd.Series):
+    """Return a dict of deeper metrics from a series of trade profits."""
+    equity = profits_series.cumsum()
+    total_trades = len(profits_series.dropna())
+    wins = profits_series[profits_series > 0]
+    losses = profits_series[profits_series < 0]
+    win_rate = len(wins) / total_trades * 100 if total_trades else 0
+    total_profit = profits_series.sum()
+    avg_win = wins.mean() if not wins.empty else 0.0
+    avg_loss = losses.mean() if not losses.empty else 0.0
+    profit_factor = (wins.sum() / abs(losses.sum())) if abs(losses.sum()) > 0 else float('inf')
+    expectancy = ((len(wins)*avg_win) + (len(losses)*avg_loss)) / total_trades if total_trades else 0
+    sharpe = (profits_series.mean() / profits_series.std() * np.sqrt(252)) if profits_series.std() != 0 else 0
+    # Max Drawdown
     roll_max = equity.cummax()
     drawdowns = equity - roll_max
-    return abs(drawdowns.min())
-
-def advanced_metrics(profits):
-    equity = profits.cumsum()
-    max_dd = calculate_max_drawdown(equity)
-    total_trades = profits.count()
-    wins = profits[profits > 0]
-    losses = profits[profits < 0]
-    win_rate = len(wins) / total_trades * 100 if total_trades else 0
-    total_profit = profits.sum()
-    avg_win = wins.mean() if len(wins) else 0
-    avg_loss = losses.mean() if len(losses) else 0
-    profit_factor = wins.sum() / abs(losses.sum()) if abs(losses.sum()) > 0 else float('inf')
-    expectancy = ((len(wins) * avg_win) + (len(losses) * avg_loss)) / total_trades if total_trades else 0
-    sharpe = profits.mean() / profits.std() * np.sqrt(252) if profits.std() != 0 else 0
-    volatility = profits.std() * np.sqrt(252)
-    # Additional: Calculate consecutive losses max streak:
+    max_dd = abs(drawdowns.min()) if not drawdowns.empty else 0.0
+    # Volatility annualized
+    volatility = profits_series.std() * np.sqrt(252) if profits_series.std() != 0 else 0.0
+    # Max consecutive losses
     streak = 0
-    max_streak = 0
-    for p in profits:
+    max_consec = 0
+    for p in profits_series:
         if p < 0:
             streak += 1
-            max_streak = max(max_streak, streak)
+            max_consec = max(max_consec, streak)
         else:
             streak = 0
+
     return {
-        'total_trades': total_trades,
-        'win_rate': win_rate,
-        'total_profit': total_profit,
-        'avg_win': avg_win,
-        'avg_loss': avg_loss,
-        'profit_factor': profit_factor,
-        'expectancy': expectancy,
-        'sharpe_ratio': sharpe,
-        'max_drawdown': max_dd,
-        'volatility_annualized': volatility,
-        'max_consecutive_losses': max_streak
+        "total_trades": total_trades,
+        "win_rate": round(win_rate, 2),
+        "total_profit": round(total_profit, 2),
+        "avg_win": round(avg_win, 2),
+        "avg_loss": round(avg_loss, 2),
+        "profit_factor": round(profit_factor, 2),
+        "expectancy": round(expectancy, 2),
+        "sharpe_ratio": round(sharpe, 2),
+        "max_drawdown": round(max_dd, 2),
+        "volatility_annualized": round(volatility, 4),
+        "max_consecutive_losses": max_consec
     }
 
-def decode_file(file):
-    content = file.read()
-    for enc in ['utf-8','utf-16','latin-1']:
-        try:
-            return content.decode(enc)
-        except:
-            continue
-    return content.decode('utf-8', errors='replace')
-
 def parse_mt5_report(file):
+    """Attempt to extract a trade table from a full MT5 report, then return DataFrame."""
     file.seek(0)
-    text = decode_file(file)
+    raw = file.read()
+    try:
+        text = raw.decode("utf-8")
+    except:
+        text = raw.decode("utf-8", errors="replace")
     lines = text.splitlines()
     header_idx = None
     for i, line in enumerate(lines):
@@ -148,309 +157,342 @@ def parse_mt5_report(file):
             header_idx = i
             break
     if header_idx is None:
-        raise ValueError("Could not find trades table header.")
+        raise ValueError("Cannot find table header with 'Profit'.")
+    # find end of trades table
     end_idx = None
     for i in range(header_idx+1, len(lines)):
-        if lines[i].strip() == "" or any(x in lines[i] for x in ["Summary","Report","[","input"]):
+        if lines[i].strip() == "" or any(tok in lines[i] for tok in ["Summary", "Report", "[", "input"]):
             end_idx = i
             break
     if end_idx is None:
         end_idx = len(lines)
-    df = pd.read_csv(io.StringIO("\n".join(lines[header_idx:end_idx])))
-    return df
+    table_text = "\n".join(lines[header_idx:end_idx])
+    return pd.read_csv(io.StringIO(table_text))
 
 def parse_set_file(file):
+    """Parse `.set` or `.ini` exactly, preserving all lines and sections."""
     file.seek(0)
     raw = file.read()
-    for enc in ['utf-16','utf-8','latin-1']:
+    for enc in ("utf-16", "utf-16le", "utf-8", "latin-1"):
         try:
             if isinstance(raw, bytes):
                 content = raw.decode(enc)
             else:
                 content = raw
-            if '\x00' in content:
-                content = content.replace('\x00','')
-            break
+            if "\x00" in content:
+                content = content.replace("\x00", "")
+            if "=" in content:
+                break
         except:
             continue
     else:
-        content = raw.decode('utf-8', errors='replace') if isinstance(raw, bytes) else raw
+        content = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+
     lines = content.splitlines()
     sections = {}
-    current_section = "Parameters"
-    sections[current_section] = []
+    current = None
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("[") and stripped.endswith("]"):
-            current_section = stripped.strip("[]")
-            sections[current_section] = []
-        elif '=' in line and not stripped.startswith(";"):
-            sections[current_section].append(line)
+            current = stripped.strip("[]")
+            sections[current] = []
+        elif current is not None:
+            sections.setdefault(current, []).append(line)
         else:
-            sections.setdefault(current_section, []).append(line)
+            # If no [section], put under default
+            current = "Parameters"
+            sections.setdefault(current, []).append(line)
     return sections, lines
 
 def generate_equity_curve_plot(profits):
-    mpl.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(6,3))
-    equity = profits.cumsum()
-    ax.plot(equity.index, equity.values, color='#00ffff', linewidth=2, label='Equity Curve')
-    ax.fill_between(equity.index, equity.values, equity.cummax(), color='#004466', alpha=0.3, label='Drawdown')
-    ax.set_title("Equity Curve with Drawdown", color='#76b0f1', fontsize=14)
-    ax.set_xlabel("Trade #", color='#76b0f1')
-    ax.set_ylabel("Cumulative Profit", color='#76b0f1')
-    ax.tick_params(colors='#76b0f1')
-    ax.legend(facecolor='#0c1225', edgecolor='#76b0f1', labelcolor='#76b0f1')
-    ax.grid(True, color='#1f2e5e')
+    mpl.style.use("dark_background")
+    fig, ax = plt.subplots(figsize=(6, 3))
+    eq = profits.cumsum()
+    ax.plot(eq.index, eq.values, color="#00ffff", linewidth=2, label="Equity Curve")
+    ax.fill_between(eq.index, eq.values, eq.cummax(), color="#004466", alpha=0.4, label="Drawdown")
+    ax.set_title("Equity Curve with Drawdown", color="#68c0ff", fontsize=14)
+    ax.set_xlabel("Trade #", color="#68c0ff")
+    ax.set_ylabel("Cum. Profit", color="#68c0ff")
+    ax.tick_params(colors="#68c0ff")
+    ax.legend(facecolor="#0b0e1d", edgecolor="#68c0ff", labelcolor="#68c0ff")
+    ax.grid(True, color="#1f2e5e")
     plt.tight_layout()
     return fig
 
-def generate_optimized_setfile_text(full_output_lines, optimized_params):
-    output_lines = []
-    for line in full_output_lines:
+def generate_optimized_setfile_text(full_lines, optimized_params):
+    """Recompose `.set` text by preserving everything except updated values."""
+    out = []
+    for line in full_lines:
         stripped = line.strip()
-        if '=' in line and not stripped.startswith(';'):
-            key = line.split('=', 1)[0].strip()
+        if "=" in line and not stripped.startswith(";"):
+            key = line.split("=", 1)[0].strip()
             if key in optimized_params:
-                parts = line.split('=', 1)[1].split('||',1)
-                comment = f"||{parts[1]}" if len(parts)>1 else ""
-                new_line = f"{key}={optimized_params[key]}{comment}"
-                output_lines.append(new_line)
+                parts = line.split("=", 1)[1].split("||", 1)
+                comment = f"||{parts[1]}" if len(parts) > 1 else ""
+                out.append(f"{key}={optimized_params[key]}{comment}")
             else:
-                output_lines.append(line)
+                out.append(line)
         else:
-            output_lines.append(line)
-    return "\n".join(output_lines)
+            out.append(line)
+    return "\n".join(out)
 
-def super_intelligent_optimizer(editable_params, metrics):
-    optimized_params = editable_params.copy()
+def super_intelligent_optimizer(params, metrics):
+    """
+    Combine advanced heuristics + GPT-driven suggestions to produce:
+      - optimized_params (dict)
+      - messages (list of text)
+      - gpt_advice (str, natural-language)
+    """
+    optimized = params.copy()
     messages = []
 
-    max_dd = metrics['max_drawdown']
-    profit_factor = metrics['profit_factor']
-    win_rate = metrics['win_rate']
-    expectancy = metrics['expectancy']
-    sharpe = metrics['sharpe_ratio']
-    volatility = metrics['volatility_annualized']
-    max_streak = metrics['max_consecutive_losses']
-    avg_win = metrics['avg_win']
-    avg_loss = abs(metrics['avg_loss'])
+    # Unpack key metrics
+    dd = metrics["max_drawdown"]
+    pf = metrics["profit_factor"]
+    wr = metrics["win_rate"]
+    expv = metrics["expectancy"]
+    sr = metrics["sharpe_ratio"]
+    vol = metrics["volatility_annualized"]
+    streak = metrics["max_consecutive_losses"]
+    avg_w = metrics["avg_win"]
+    avg_l = abs(metrics["avg_loss"])
 
-    # Dynamic Risk Management: Lower risk if drawdown high or volatility high
-    if "RiskPercent" in optimized_params:
+    # 1) Dynamic RiskPercent
+    if "RiskPercent" in optimized:
         try:
-            old_risk = float(optimized_params["RiskPercent"])
-            risk_factor = 1.0
-            if max_dd > 20 or volatility > 0.05:
-                risk_factor *= 0.4
-            elif max_dd > 10 or volatility > 0.03:
-                risk_factor *= 0.7
-            if profit_factor < 1.5:
-                risk_factor *= 0.6
-            new_risk = clamp(old_risk * risk_factor, 0.05, old_risk)
-            optimized_params["RiskPercent"] = str(round(new_risk, 3))
-            messages.append(f"Adaptive RiskPercent set to {new_risk} based on drawdown and volatility.")
+            r_old = float(optimized["RiskPercent"])
+            rf = 1.0
+            if dd > 20 or vol > 0.06:
+                rf *= 0.4
+            elif dd > 10 or vol > 0.04:
+                rf *= 0.7
+            if pf < 1.5:
+                rf *= 0.6
+            new_r = clamp(r_old * rf, 0.05, r_old)
+            optimized["RiskPercent"] = str(round(new_r, 3))
+            messages.append(f"RiskPercent adjusted from {r_old} to {new_r} based on Drawdown & Volatility.")
         except:
             pass
 
-    # Reward:Risk Adjustments with expectancy feedback
-    if "TakeProfit" in optimized_params and "StopLoss" in optimized_params:
+    # 2) TakeProfit/StopLoss w/ expectancy + win-rate
+    if "TakeProfit" in optimized and "StopLoss" in optimized:
         try:
-            old_tp = float(optimized_params["TakeProfit"])
-            old_sl = float(optimized_params["StopLoss"])
-
-            vol_factor = 1.0 if max_dd < 10 else 0.6
-            new_sl = clamp(min(old_sl, avg_loss * 1.2) * vol_factor, 2, 500)
-
-            # Adjust RR ratio by expectancy and win rate (min 1.5, max 3)
-            base_rr = clamp(1.5 + (expectancy / 100) + (win_rate / 100), 1.5, 3.0)
+            tp_old = float(optimized["TakeProfit"])
+            sl_old = float(optimized["StopLoss"])
+            vf = 1.0 if dd < 10 else 0.6
+            new_sl = clamp(min(sl_old, avg_l * 1.2) * vf, 2, 500)
+            base_rr = clamp(1.5 + (expv / 100) + (wr / 100), 1.5, 3.0)
             new_tp = clamp(new_sl * base_rr, 5, 1000)
-
-            optimized_params["StopLoss"] = str(round(new_sl, 2))
-            optimized_params["TakeProfit"] = str(round(new_tp, 2))
-            messages.append(f"TakeProfit set to {new_tp} and StopLoss to {new_sl} based on expectancy and win rate.")
+            optimized["StopLoss"] = str(round(new_sl, 2))
+            optimized["TakeProfit"] = str(round(new_tp, 2))
+            messages.append(f"StopLoss set to {new_sl} and TakeProfit to {new_tp} (RR={round(base_rr,2)}).")
         except:
             pass
 
-    # RSI and Momentum filter tuning
-    if "RSIPeriod" in optimized_params and "RSIOverbought" in optimized_params and "RSIOversold" in optimized_params:
+    # 3) RSI tuning
+    if all(k in optimized for k in ["RSIPeriod", "RSIOverbought", "RSIOversold"]):
         try:
-            rsi_period = int(optimized_params["RSIPeriod"])
-            ob = int(optimized_params["RSIOverbought"])
-            os = int(optimized_params["RSIOversold"])
-
-            # Increase period and tighten bands if sharpe low or max streak high
-            if sharpe < 0.5 or max_streak > 3:
-                rsi_period = clamp(rsi_period + 2, 7, 21)
+            rspi = int(optimized["RSIPeriod"])
+            ob = int(optimized["RSIOverbought"])
+            osv = int(optimized["RSIOversold"])
+            if sr < 0.6 or streak > 3:
+                rspi = clamp(rspi + 2, 7, 21)
                 ob = clamp(ob - 5, 70, 90)
-                os = clamp(os + 5, 10, 30)
+                osv = clamp(osv + 5, 10, 30)
             else:
-                # Relax bands a bit for more trades if sharpe high
                 ob = clamp(ob + 3, 70, 95)
-                os = clamp(os - 3, 5, 30)
-
-            optimized_params["RSIPeriod"] = str(rsi_period)
-            optimized_params["RSIOverbought"] = str(ob)
-            optimized_params["RSIOversold"] = str(os)
-            messages.append(f"RSI tuned: Period {rsi_period}, Overbought {ob}, Oversold {os}.")
+                osv = clamp(osv - 3, 5, 30)
+            optimized["RSIPeriod"] = str(rspi)
+            optimized["RSIOverbought"] = str(ob)
+            optimized["RSIOversold"] = str(osv)
+            messages.append(f"RSI tuned: Period={rspi}, Overbought={ob}, Oversold={osv}.")
         except:
             pass
 
-    # Moving Average noise filter adjustments
-    if "MovingAveragePeriodShort" in optimized_params and "MovingAveragePeriodLong" in optimized_params:
+    # 4) MA noise filter
+    if all(k in optimized for k in ["MovingAveragePeriodShort", "MovingAveragePeriodLong"]):
         try:
-            short_ma = int(optimized_params["MovingAveragePeriodShort"])
-            long_ma = int(optimized_params["MovingAveragePeriodLong"])
-
-            if sharpe < 0.7:
-                short_ma = clamp(short_ma + 5, 5, 50)
-                long_ma = clamp(long_ma + 10, short_ma + 5, 200)
+            sma = int(optimized["MovingAveragePeriodShort"])
+            lma = int(optimized["MovingAveragePeriodLong"])
+            if sr < 0.8:
+                sma = clamp(sma + 5, 5, 50)
+                lma = clamp(lma + 10, sma + 5, 200)
             else:
-                short_ma = clamp(short_ma, 5, 50)
-                long_ma = clamp(long_ma, short_ma + 5, 200)
-
-            optimized_params["MovingAveragePeriodShort"] = str(short_ma)
-            optimized_params["MovingAveragePeriodLong"] = str(long_ma)
-            messages.append(f"MA periods adjusted: Short {short_ma}, Long {long_ma}.")
+                sma = clamp(sma, 5, 50)
+                lma = clamp(lma, sma + 5, 200)
+            optimized["MovingAveragePeriodShort"] = str(sma)
+            optimized["MovingAveragePeriodLong"] = str(lma)
+            messages.append(f"MA periods adjusted: Short={sma}, Long={lma}.")
         except:
             pass
 
-    # Add additional AI-driven heuristics here if you want to expand
+    # 5) GPT-powered natural-language advice:
+    gpt_advice = ""
+    api_key = os.getenv("OPENAI_API_KEY", None)
+    if api_key:
+        openai.api_key = api_key
+        # Build a brief prompt summarizing key metrics + current parameters
+        prompt = f"""
+You are an expert MT5 strategy optimizer. 
+The EA's current parameters are:
+{ {k: optimized[k] for k in optimized} }
 
-    # Provide holistic summary advice in natural language
-    summary = f"""
-    Based on your backtest:
-    - Total trades: {metrics['total_trades']}
-    - Win rate: {win_rate:.2f}%
-    - Profit factor: {profit_factor:.2f}
-    - Max drawdown: {max_dd:.2f}
-    - Sharpe ratio: {sharpe:.2f}
-    - Volatility (annualized): {volatility:.4f}
-    - Max consecutive losses: {max_streak}
+The backtest metrics are:
+- Total Trades: {metrics['total_trades']}
+- Win Rate: {metrics['win_rate']}%
+- Total Profit: {metrics['total_profit']}
+- Average Win: {metrics['avg_win']}, Average Loss: {metrics['avg_loss']}
+- Profit Factor: {metrics['profit_factor']}
+- Expectancy: {metrics['expectancy']}
+- Sharpe Ratio: {metrics['sharpe_ratio']}
+- Max Drawdown: {metrics['max_drawdown']}
+- Annual Volatility: {metrics['volatility_annualized']}
+- Max Consecutive Losses: {metrics['max_consecutive_losses']}
 
-    Suggested parameter adjustments aim to optimize reward:risk ratio,
-    reduce drawdown and volatility exposure, and tune momentum filters for higher stability.
-    """
+Based on these, recommend any further parameter adjustments in a concise bullet list. Only recommend parameters present above.
+"""
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": "You are a top-tier MT5 optimization AI."},
+                          {"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=300,
+            )
+            gpt_advice = response.choices[0].message.content.strip()
+        except Exception as e:
+            gpt_advice = f"(GPT advice failed: {e})"
+    else:
+        gpt_advice = "(OpenAI API key not set; skipping GPT-powered advice.)"
 
-    return optimized_params, messages, summary
+    return optimized, messages, gpt_advice
 
-# --- Main logic ---
+# --- 4. MAIN LOGIC ---
 
 editable_params = {}
 full_output_lines = []
 metrics = {}
-set_file_loaded = False
 df = None
+parsed = False
 
-if uploaded_set is not None:
+# 4a) Parse `.set` if uploaded
+if uploaded_set:
     try:
         sections, full_output_lines = parse_set_file(uploaded_set)
-        set_file_loaded = True
+        editable_params.clear()
+        for sec, lines in sections.items():
+            for line in lines:
+                if "=" in line and not line.strip().startswith(";"):
+                    k, v = line.split("=", 1)
+                    editable_params[k.strip()] = v.split("||")[0].strip()
+        parsed = True
     except Exception as e:
-        st.error(f"Failed to parse set file: {e}")
+        st.error(f"Error parsing `.set` file: {e}")
 
-if set_file_loaded:
-    st.sidebar.markdown("### EA Parameters Detected (Edit if needed)")
-    editable_params.clear()
-    for sec, lines in sections.items():
-        st.sidebar.markdown(f"**[{sec}]**")
-        for line in lines:
-            if '=' in line and not line.strip().startswith(";"):
-                key, val = line.split('=', 1)
-                editable_params[key.strip()] = val.split('||')[0].strip()
-
-if uploaded_csv is not None:
+# 4b) Parse CSV & show metrics/plot
+if uploaded_csv:
     try:
         uploaded_csv.seek(0)
         df = pd.read_csv(uploaded_csv)
         if "Profit" not in df.columns:
-            raise Exception("No 'Profit' column found; attempting MT5 report parsing.")
-    except Exception:
-        uploaded_csv.seek(0)
+            raise Exception("No `Profit` column. Attempting report parsing…")
+    except:
         try:
             df = parse_mt5_report(uploaded_csv)
-            st.success("Extracted trade table from MT5 report.")
+            st.success("Extracted trades from MT5 report.")
         except Exception as e:
-            st.error(f"Error parsing CSV/report: {e}")
+            st.error(f"CSV/report parsing error: {e}")
             df = None
 
     if df is not None:
         profit_col = next((c for c in df.columns if "profit" in c.lower()), None)
-        if profit_col is None:
-            st.error("Profit column missing in data.")
+        if not profit_col:
+            st.error("`Profit` column not found.")
             st.stop()
-        profits = df[profit_col].apply(clean_profit_value).dropna()
-        metrics = advanced_metrics(profits)
 
-        st.subheader("Backtest Metrics")
+        profits = df[profit_col].apply(clean_profit).dropna()
+        metrics = calculate_advanced_metrics(profits)
+
+        st.subheader("📊 Backtest Metrics")
         st.write(metrics)
 
+        st.subheader("📈 Equity Curve")
         fig = generate_equity_curve_plot(profits)
         st.pyplot(fig)
 
-if uploaded_csv is not None and uploaded_set is not None:
-    if st.sidebar.button("🤖 Analyze & Optimize Settings Automatically"):
-        st.session_state.optimize_clicked = True
+# 4c) Show guidance if only one file
+if uploaded_set and not uploaded_csv:
+    st.info("EA settings loaded. Please upload backtest CSV to proceed.")
+if uploaded_csv and not uploaded_set:
+    st.info("Backtest CSV loaded. Please upload EA `.set` to proceed.")
 
-if st.session_state.get("optimize_clicked", False) and editable_params and metrics:
-    with st.spinner("Running AI-powered optimization..."):
+# 4d) Optimize button (only when both present)
+if uploaded_csv and uploaded_set and not st.session_state.get("optimized", False):
+    if st.sidebar.button("🤖 Run AI-Powered Optimization"):
+        st.session_state.optimized = True
+
+# 4e) When optimization triggered:
+if st.session_state.get("optimized", False) and editable_params and metrics:
+    st.markdown("---")
+    st.header("🚀 AI-Powered Optimization Results")
+
+    with st.spinner("Thinking…"):
         time.sleep(1)
-        optimized_params, messages, summary = super_intelligent_optimizer(editable_params, metrics)
+        opt_params, heuristic_msgs, gpt_msgs = super_intelligent_optimizer(editable_params, metrics)
 
-        st.subheader("🤖 AI Optimization Summary")
-        st.info(textwrap.fill(summary, width=80))
+    st.subheader("⚙️ Heuristic Adjustments")
+    for m in heuristic_msgs:
+        st.write(f"- {m}")
 
-        st.subheader("⚙️ Optimization Suggestions & Changes")
-        for msg in messages:
-            st.write("- " + msg)
+    st.subheader("🧠 GPT-Powered Advice")
+    st.info(textwrap.fill(gpt_msgs, width=80))
 
-        st.subheader("📊 Parameter Comparison")
-        keys = sorted(set(editable_params.keys()) | set(optimized_params.keys()))
-        comp_data = []
-        for k in keys:
-            comp_data.append({
-                "Parameter": k,
-                "Original": editable_params.get(k, ""),
-                "Optimized": optimized_params.get(k, editable_params.get(k, ""))
-            })
-        st.table(comp_data)
+    st.subheader("📋 Parameter Comparison")
+    comp_list = []
+    keys = sorted(set(editable_params.keys()) | set(opt_params.keys()))
+    for k in keys:
+        comp_list.append({
+            "Parameter": k,
+            "Original": editable_params.get(k, ""),
+            "Optimized": opt_params.get(k, editable_params.get(k, ""))
+        })
+    st.table(comp_list)
 
-        new_setfile_text = generate_optimized_setfile_text(full_output_lines, optimized_params)
-
-        st.markdown("### Download Your AI-Optimized Set File")
-        st.download_button(
-            label="📥 Download Optimized .set File",
-            data=new_setfile_text,
-            file_name="TraderIQ_AI_Optimized.set",
-            mime="text/plain"
-        )
-
-# Manual editing fallback
-if editable_params and not st.session_state.get("optimize_clicked", False):
-    st.subheader("Manual Parameter Editor")
-    for key, val in editable_params.items():
-        new_val = st.text_input(key, val)
-        editable_params[key] = new_val
-
-    output_lines = []
-    for line in full_output_lines:
-        if '=' in line and not line.strip().startswith(";"):
-            key = line.split('=',1)[0].strip()
-            val = editable_params.get(key, None)
-            if val is not None:
-                output_lines.append(f"{key}={val}")
-            else:
-                output_lines.append(line)
-        else:
-            output_lines.append(line)
-    new_setfile_text = "\n".join(output_lines)
-    st.markdown("### Download Edited .set File")
+    new_text = generate_optimized_setfile_text(full_output_lines, opt_params)
+    st.markdown("### 📥 Download Your Super-Intelligent `.set` File")
     st.download_button(
-        label="📥 Download Edited .set File",
-        data=new_setfile_text,
+        label="Download AI-Optimized Set File",
+        data=new_text,
+        file_name="TraderIQ_AI_Optimized.set",
+        mime="text/plain"
+    )
+
+# 4f) Manual editing fallback (if optimization not done)
+if editable_params and not st.session_state.get("optimized", False):
+    st.subheader("✏️ Manual Parameter Editor")
+    for k, v in editable_params.items():
+        editable_params[k] = st.text_input(k, v)
+
+    manual_lines = []
+    for line in full_output_lines:
+        if "=" in line and not line.strip().startswith(";"):
+            kk = line.split("=",1)[0].strip()
+            if kk in editable_params:
+                manual_lines.append(f"{kk}={editable_params[kk]}")
+            else:
+                manual_lines.append(line)
+        else:
+            manual_lines.append(line)
+
+    manual_text = "\n".join(manual_lines)
+    st.markdown("### 📥 Download Manually Edited `.set` File")
+    st.download_button(
+        label="Download Currently Edited .set File",
+        data=manual_text,
         file_name="TraderIQ_ManualEdit.set",
         mime="text/plain"
     )
 
 st.markdown("---")
-st.caption("TraderIQ: AI-driven MT5 Strategy Optimizer — Upload your backtest CSV and EA .set/.ini files to get started.")
+st.caption("TraderIQ: AI-Driven MT5 Strategy Optimizer. Upload your backtest and EA files to unleash super-intelligent tuning!")
+
