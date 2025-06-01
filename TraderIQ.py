@@ -167,35 +167,32 @@ def calculate_advanced_metrics(profits):
         "max_consecutive_losses": max_consec
     }
 
+# ---- PATCHED: Robust MT5 HTML table extractor ----
 def extract_deals_table_from_mt5_html(html_bytes):
     soup = BeautifulSoup(html_bytes, "html.parser")
     tables = soup.find_all("table")
-    deals_table = None
+    # Find the table with headers like "Profit", "P/L", "Result", "PNL"
+    profit_like_names = ["profit", "p/l", "result", "pnl"]
     for table in tables:
-        if table.find(string="Deals"):
-            deals_table = table
-            break
-    if deals_table is None:
-        return None
-    rows = deals_table.find_all("tr")
-    for i, row in enumerate(rows):
-        ths = row.find_all("th")
-        if ths and any("Deal" in th.get_text() for th in ths):
-            header_row = i
-            break
-    else:
-        return None
-    header = [th.get_text(strip=True) for th in rows[header_row].find_all(["th", "td"])]
-    data = []
-    for row in rows[header_row + 1:]:
-        tds = row.find_all("td")
-        if len(tds) == len(header):
-            data.append([td.get_text(strip=True).replace('\xa0', ' ') for td in tds])
-    df = pd.DataFrame(data, columns=header)
-    # Try to convert any possible number columns to float
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors='ignore')
-    return df
+        headers = []
+        first_row = table.find("tr")
+        if first_row:
+            headers = [th.get_text(strip=True).lower() for th in first_row.find_all(["th", "td"])]
+        if any(any(pn in h for pn in profit_like_names) for h in headers):
+            # Found likely deals/trades table!
+            rows = table.find_all("tr")
+            data = []
+            for row in rows[1:]:
+                tds = row.find_all("td")
+                if len(tds) == len(headers):
+                    data.append([td.get_text(strip=True).replace('\xa0', ' ') for td in tds])
+            if data:
+                df = pd.DataFrame(data, columns=[h.title() for h in headers])
+                # Try to convert all columns to numeric where possible
+                for col in df.columns:
+                    df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.replace(" ", ""), errors='ignore')
+                return df
+    return None  # No suitable table found
 
 if uploaded_report:
     filetype = os.path.splitext(uploaded_report.name)[1].lower()
@@ -234,7 +231,7 @@ if uploaded_report:
 
         # Try to auto-select best numeric column
         default_profit_col = None
-        priority_names = ["profit", "pnl", "result"]
+        priority_names = ["profit", "p/l", "result", "pnl"]
         for col in numeric_cols:
             for name in priority_names:
                 if name in col.lower():
